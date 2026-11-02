@@ -40,7 +40,6 @@ import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon as OsmPolygon
 import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
@@ -110,10 +109,8 @@ fun OsmMapView(
     }
 
     remember {
-        RotationGestureOverlay(mapView).apply {
-            isEnabled = true
-            mapView.overlays.add(this)
-        }
+        // Google-Maps-like: pinch = zoom only; rotate only after a deliberate twist
+        SmoothRotationOverlay(mapView).also { mapView.overlays.add(it) }
     }
 
     val onLongPressRef = rememberUpdatedState(onLongPress)
