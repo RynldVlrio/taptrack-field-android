@@ -55,6 +55,51 @@ class SupabaseClient(
         SignInResult(user.getString("id"), user.optStringOrNull("email"))
     }
 
+    /** Email a one-time code. createUser=true for "open an account", false for "forgot password". */
+    suspend fun sendEmailCode(email: String, createUser: Boolean, fullName: String? = null) = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("email", email).put("create_user", createUser)
+        if (!fullName.isNullOrBlank()) body.put("data", JSONObject().put("full_name", fullName))
+        val req = Request.Builder().url("$baseUrl/auth/v1/otp").header("apikey", apiKey)
+            .post(body.toString().toRequestBody(jsonType)).build()
+        execute(req, authFlow = true)
+        Unit
+    }
+
+    /** Check the emailed code → signed in (tokens saved). */
+    suspend fun verifyEmailCode(email: String, code: String): SignInResult = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("type", "email").put("email", email).put("token", code)
+        val req = Request.Builder().url("$baseUrl/auth/v1/verify").header("apikey", apiKey)
+            .post(body.toString().toRequestBody(jsonType)).build()
+        val json = JSONObject(execute(req, authFlow = true))
+        saveTokenResponse(json)
+        val user = json.getJSONObject("user")
+        SignInResult(user.getString("id"), user.optStringOrNull("email"))
+    }
+
+    /** Set the signed-in user's password. */
+    suspend fun updatePassword(password: String) {
+        ensureFreshToken()
+        withContext(Dispatchers.IO) {
+            val req = authed("$baseUrl/auth/v1/user").put(JSONObject().put("password", password).toString().toRequestBody(jsonType)).build()
+            execute(req, authFlow = true)
+        }
+    }
+
+    /** Call a database function (signed in). Returns the raw JSON text. */
+    suspend fun rpc(name: String, args: JSONObject = JSONObject()): String {
+        ensureFreshToken()
+        return withContext(Dispatchers.IO) {
+            execute(authed("$baseUrl/rest/v1/rpc/$name").post(args.toString().toRequestBody(jsonType)).build())
+        }
+    }
+
+    /** Call a database function before sign-in (e.g. join_info). */
+    suspend fun rpcAnon(name: String, args: JSONObject): String = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url("$baseUrl/rest/v1/rpc/$name").header("apikey", apiKey)
+            .post(args.toString().toRequestBody(jsonType)).build()
+        execute(req)
+    }
+
     /** Refreshes the access token when it is about to expire. */
     suspend fun ensureFreshToken() {
         if (session.accessToken != null && session.expiresAt - 60 > System.currentTimeMillis() / 1000) return
@@ -177,6 +222,10 @@ class SupabaseClient(
             msg == null -> "Server error ($code)"
             msg.contains("Invalid login credentials") -> "Wrong email or password"
             msg.contains("row-level security") -> "You don't have permission to do that"
+            Regex("rate limit|security purposes", RegexOption.IGNORE_CASE).containsMatchIn(msg) -> "Too many tries — wait a minute and try again"
+            Regex("expired|invalid.*(otp|token)", RegexOption.IGNORE_CASE).containsMatchIn(msg) -> "That code is wrong or has expired. Request a new one."
+            Regex("signups? not allowed|signup.*disabled", RegexOption.IGNORE_CASE).containsMatchIn(msg) -> "New accounts are switched off on the server"
+            Regex("different from the old|same as", RegexOption.IGNORE_CASE).containsMatchIn(msg) -> "Choose a password different from the old one"
             else -> msg
         }
     }

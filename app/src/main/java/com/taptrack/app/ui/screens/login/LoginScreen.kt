@@ -32,7 +32,7 @@ import java.io.IOException
  * [reLogin] = the session expired; local unsynced changes are kept if the same user signs back in.
  */
 @Composable
-fun LoginScreen(container: AppContainer, reLogin: Boolean = false) {
+fun LoginScreen(container: AppContainer, reLogin: Boolean = false, onForgot: () -> Unit = {}, onJoin: (() -> Unit)? = null) {
     val scope = rememberCoroutineScope()
     var email by remember { mutableStateOf(container.session.email ?: "") }
     var password by remember { mutableStateOf("") }
@@ -86,7 +86,14 @@ fun LoginScreen(container: AppContainer, reLogin: Boolean = false) {
                 if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Sign in")
             }
             Spacer(Modifier.height(12.dp))
-            Text("No account? Ask the office administrator.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = onForgot) { Text("Forgot password?") }
+            if (onJoin != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("New here?", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = onJoin) { Text("Open an account") }
+                }
+                Text("You need the invite code from the admin.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

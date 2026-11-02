@@ -22,7 +22,9 @@ import androidx.navigation.navArgument
 import com.taptrack.app.AppContainer
 import com.taptrack.app.ui.screens.applicants.ApplicantEditScreen
 import com.taptrack.app.ui.screens.applicants.ApplicantListScreen
+import com.taptrack.app.ui.screens.login.AuthScreens
 import com.taptrack.app.ui.screens.login.LoginScreen
+import com.taptrack.app.ui.screens.login.OnboardingScreen
 import com.taptrack.app.ui.screens.map.MapScreen
 import com.taptrack.app.ui.screens.more.MoreScreen
 import com.taptrack.app.ui.screens.tapstands.TapstandEditScreen
@@ -41,9 +43,11 @@ private val tabs = listOf(
 fun AppRoot(container: AppContainer) {
     val loggedIn by container.session.loggedIn.collectAsStateWithLifecycle()
     val sync by container.sync.state.collectAsStateWithLifecycle()
+    val onboarding by container.onboarding.collectAsStateWithLifecycle()
 
     when {
-        !loggedIn -> LoginScreen(container)
+        onboarding != null -> OnboardingScreen(container, onboarding!!)
+        !loggedIn -> AuthScreens(container)
         sync.authExpired -> LoginScreen(container, reLogin = true)
         else -> MainShell(container)
     }
