@@ -256,7 +256,8 @@ fun TapstandEntity.toServerJson(withKeys: Boolean): JSONObject = JSONObject().ap
     putNullable("barangay_id", barangayId)
     putNullable("sitio", sitio)
     putNullable("location_desc", locationDesc)
-    put("lat", lat); put("lng", lng)
+    // official tapstands are only moved through the online Relocate action (50 m rule); never resend a stale spot
+    if (withKeys || code == null) { put("lat", lat); put("lng", lng) }
     put("status", status)
     put("max_connections", maxConnections)
     putNullable("installed_on", installedOn)

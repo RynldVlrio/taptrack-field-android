@@ -139,6 +139,7 @@ private fun MainShell(container: AppContainer) {
                         onDone = { nav.popBackStack() },
                         onOpenApplicant = { nav.navigate(appRoute(id = it)) },
                         onAddApplicant = { nav.navigate(appRoute(ts = it)) },
+                        onOpenTapstand = { nav.popBackStack(); nav.navigate(editRoute(id = it)) },
                     )
                 }
             }

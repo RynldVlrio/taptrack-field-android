@@ -222,6 +222,7 @@ class SupabaseClient(
             msg == null -> "Server error ($code)"
             msg.contains("Invalid login credentials") -> "Wrong email or password"
             msg.contains("row-level security") -> "You don't have permission to do that"
+            msg.contains("tapstand_requests_one_open") -> "A request of this kind is already pending for this tapstand"
             Regex("rate limit|security purposes", RegexOption.IGNORE_CASE).containsMatchIn(msg) -> "Too many tries — wait a minute and try again"
             Regex("expired|invalid.*(otp|token)", RegexOption.IGNORE_CASE).containsMatchIn(msg) -> "That code is wrong or has expired. Request a new one."
             Regex("signups? not allowed|signup.*disabled", RegexOption.IGNORE_CASE).containsMatchIn(msg) -> "New accounts are switched off on the server"

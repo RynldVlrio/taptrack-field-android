@@ -62,6 +62,7 @@ fun TapstandEditScreen(
     onDone: () -> Unit,
     onOpenApplicant: (String) -> Unit = {},
     onAddApplicant: (String) -> Unit = {},
+    onOpenTapstand: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -91,7 +92,8 @@ fun TapstandEditScreen(
     var installedOn by remember { mutableStateOf<String?>(null) }
     var remarks by remember { mutableStateOf("") }
 
-    LaunchedEffect(tapstandId) {
+    var reloadKey by remember { mutableIntStateOf(0) }
+    LaunchedEffect(tapstandId, reloadKey) {
         if (tapstandId != null) {
             container.db.tapstands().get(tapstandId)?.let { t ->
                 original = t
@@ -109,6 +111,8 @@ fun TapstandEditScreen(
     val isProposed = kind == TsKind.PROPOSED
     val isCancelled = kind == TsKind.CANCELLED
     val editable = canEdit && !isCancelled
+    val isOfficial = kind == TsKind.OFFICIAL
+    val isOffice = container.session.isOffice
 
     val savedPhotos by remember(entityId) { container.db.photos().observeFor("tapstand", entityId) }
         .collectAsStateWithLifecycle(emptyList())
@@ -254,12 +258,13 @@ fun TapstandEditScreen(
             // ── Location ──
             Text("Location", style = MaterialTheme.typography.titleSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(latText, { latText = it }, enabled = editable, singleLine = true, label = { Text("Latitude") },
+                OutlinedTextField(latText, { latText = it }, enabled = editable && !isOfficial, singleLine = true, label = { Text("Latitude") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
-                OutlinedTextField(lngText, { lngText = it }, enabled = editable, singleLine = true, label = { Text("Longitude") },
+                OutlinedTextField(lngText, { lngText = it }, enabled = editable && !isOfficial, singleLine = true, label = { Text("Longitude") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
             }
-            if (editable) {
+            if (isOfficial) Hint("To move an official tapstand use ${if (isOffice) "Relocate" else "Request relocation"} below — it keeps its code only within ${RELOCATE_LIMIT_M.toInt()} m.")
+            if (editable && !isOfficial) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(enabled = !gpsBusy, onClick = {
                         scope.launch {
@@ -277,7 +282,7 @@ fun TapstandEditScreen(
             if (movedBy != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Hint(if (movedBy < 1) "At the planned (KML) location" else "Moved ${movedBy.toInt()} m from the planned location", Modifier.weight(1f))
-                    if (editable && movedBy >= 1) TextButton(onClick = {
+                    if (editable && !isOfficial && movedBy >= 1) TextButton(onClick = {
                         latText = "%.6f".format(Locale.US, planned!!.first); lngText = "%.6f".format(Locale.US, planned.second)
                     }) { Text("Reset") }
                 }
@@ -287,15 +292,21 @@ fun TapstandEditScreen(
             if (!isCancelled) {
                 val statusIsForVerify = isProposed
                 val current = if (statusIsForVerify) officialStatus else status
-                ExposedDropdownMenuBox(expanded = statusMenu && editable, onExpandedChange = { statusMenu = it }) {
+                // decommission / reinstate go through the lifecycle actions; field can't set Inactive
+                val statusLocked = isOfficial && (original?.status == "decommissioned" || (original?.status in RETIRED && !isOffice))
+                val choices = TsStatus.official.filter { s ->
+                    s.key == original?.status || (s.key != "decommissioned" && (s.key != "inactive" || isOffice || !isOfficial))
+                }
+                val statusEditable = editable && !statusLocked
+                ExposedDropdownMenuBox(expanded = statusMenu && statusEditable, onExpandedChange = { statusMenu = it }) {
                     OutlinedTextField(
-                        value = TsStatus.of(current).label, onValueChange = {}, readOnly = true, enabled = editable,
+                        value = TsStatus.of(current).label, onValueChange = {}, readOnly = true, enabled = statusEditable,
                         label = { Text(if (statusIsForVerify) "Status when made official" else "Status") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(statusMenu) },
                         modifier = Modifier.menuAnchor().fillMaxWidth(),
                     )
-                    ExposedDropdownMenu(expanded = statusMenu && editable, onDismissRequest = { statusMenu = false }) {
-                        TsStatus.official.forEach { s ->
+                    ExposedDropdownMenu(expanded = statusMenu && statusEditable, onDismissRequest = { statusMenu = false }) {
+                        choices.forEach { s ->
                             DropdownMenuItem(text = { Text(s.label) }, onClick = {
                                 if (statusIsForVerify) officialStatus = s.key else status = s.key; statusMenu = false
                             })
@@ -341,6 +352,14 @@ fun TapstandEditScreen(
                 if (canAdd && original?.status !in setOf("inactive", "decommissioned")) {
                     OutlinedButton(onClick = { onAddApplicant(tapstandId) }) { Icon(Icons.Default.PersonAdd, null); Spacer(Modifier.width(6.dp)); Text("New applicant on this tapstand") }
                 }
+                HorizontalDivider()
+                TapstandLifecycleSection(
+                    container = container, ts = original!!, meters = meters.size,
+                    codeOf = { id -> allTapstands.firstOrNull { it.id == id }?.code ?: "another tapstand" },
+                    onOpenTapstand = onOpenTapstand,
+                    onChanged = { reloadKey++ },
+                )
+                HorizontalDivider()
             }
 
             // ── Photos ──
@@ -381,7 +400,7 @@ fun TapstandEditScreen(
                     isCancelled -> OutlinedButton(onClick = { save(SaveAction.REOPEN) }, Modifier.fillMaxWidth()) { Text("Reopen as proposed") }
                     else -> {
                         Button(onClick = { save(SaveAction.SAVE) }, Modifier.fillMaxWidth()) { Text("Save") }
-                        Hint("Official tapstands can't be cancelled — set the status to Inactive or Decommissioned instead.")
+                        Hint("Official tapstands keep their code for good — use the lifecycle actions above to relocate, decommission or reinstate.")
                     }
                 }
             } else Hint("View only — your account can't edit.")

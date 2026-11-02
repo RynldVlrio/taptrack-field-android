@@ -308,6 +308,8 @@ fun ApplicantEditScreen(
             Section("Tapstand & water meter")
             Hint("Only tapstands in the applicant's barangay. Design capacity is 10 meters. Tapstand, slot and meter no. are all needed before the office can approve.")
             if (locked) Banner("${AppStatus.of(original!!.status).label} — only the office can change the tapstand or meter.")
+            if (selTs != null && selTs.status in setOf("inactive", "decommissioned"))
+                Banner("⚠ Tapstand ${selTs.code ?: ""} is ${TsStatus.of(selTs.status).label.lowercase()} — reassign this meter to another tapstand.", warn = true)
             when {
                 barangayId == null -> Hint("Choose the barangay first.")
                 options.isEmpty() -> Hint("No official tapstands in ${brgy?.name ?: "this barangay"} yet.")

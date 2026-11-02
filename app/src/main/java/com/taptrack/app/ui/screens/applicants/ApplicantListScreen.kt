@@ -45,6 +45,7 @@ fun ApplicantListScreen(container: AppContainer, onOpen: (String) -> Unit, onAdd
     val tapstands by remember { container.db.tapstands().observe(projectId) }.collectAsStateWithLifecycle(emptyList())
     val brgyName = remember(barangays) { barangays.associate { it.id to it.name } }
     val tsCode = remember(tapstands) { tapstands.associate { it.id to (it.code ?: "new tapstand") } }
+    val tsRetired = remember(tapstands) { tapstands.filter { it.status in setOf("inactive", "decommissioned") }.map { it.id }.toSet() }
 
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(AppFilter.ALL) }
@@ -105,7 +106,7 @@ fun ApplicantListScreen(container: AppContainer, onOpen: (String) -> Unit, onAdd
                                     a.applicationNo ?: "no. on sync",
                                     AppStatus.of(a.status).label,
                                     brgyName[a.barangayId],
-                                    a.assignedTapstandId?.let { slotLabel(tsCode[it], a.meterSlot) },
+                                    a.assignedTapstandId?.let { (if (it in tsRetired) "⚠ " else "") + slotLabel(tsCode[it], a.meterSlot) },
                                     a.meterSerial?.let { "meter $it" },
                                 ).joinToString(" · "), maxLines = 2, overflow = TextOverflow.Ellipsis)
                             },
