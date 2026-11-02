@@ -10,6 +10,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.taptrack.app.data.local.dao.BoundaryDao
 import com.taptrack.app.data.local.entity.BoundaryEntity
 import kotlinx.coroutines.Dispatchers
@@ -108,6 +110,30 @@ data class PhotoEntity(
     val error: String? = null,
 )
 
+/** Shared map layer from the web (GeoJSON downloaded for offline use). Read-only on phones except the on/off switch. */
+@Entity(tableName = "map_layers")
+data class MapLayerEntity(
+    @PrimaryKey val id: String,
+    val projectId: String,
+    val name: String,
+    val storagePath: String,
+    val fileType: String,
+    val strokeColor: Int,            // ARGB
+    val fillColor: Int,              // ARGB (alpha = fill opacity)
+    val weight: Float,
+    val showLabel: Boolean,
+    val defaultVisible: Boolean,
+    val deleted: Boolean,
+    val syncVersion: Long,
+    val updatedAt: String,
+    val localFile: String? = null,   // downloaded GeoJSON on this phone
+    val localVersion: String? = null, // updatedAt of the downloaded copy
+    val userVisible: Boolean? = null, // this phone's on/off choice (null = layer default)
+)
+
+/** Shown on this phone? (its own on/off choice, else the office default) */
+val MapLayerEntity.visible: Boolean get() = userVisible ?: defaultVisible
+
 @Entity(tableName = "sync_meta")
 data class SyncMetaEntity(@PrimaryKey val key: String, val value: String)
 
@@ -187,6 +213,23 @@ interface PhotoDao {
 }
 
 @Dao
+interface MapLayerDao {
+    @Query("SELECT * FROM map_layers WHERE projectId = :projectId AND deleted = 0 ORDER BY name")
+    fun observe(projectId: String): Flow<List<MapLayerEntity>>
+
+    @Query("SELECT * FROM map_layers")
+    suspend fun all(): List<MapLayerEntity>
+
+    @Upsert suspend fun upsertAll(rows: List<MapLayerEntity>)
+
+    @Query("UPDATE map_layers SET localFile = :file, localVersion = :version WHERE id = :id")
+    suspend fun markDownloaded(id: String, file: String?, version: String?)
+
+    @Query("UPDATE map_layers SET userVisible = :visible WHERE id = :id")
+    suspend fun setUserVisible(id: String, visible: Boolean?)
+}
+
+@Dao
 interface SyncMetaDao {
     @Query("SELECT value FROM sync_meta WHERE `key` = :key")
     suspend fun get(key: String): String?
@@ -203,9 +246,9 @@ interface SyncMetaDao {
 @Database(
     entities = [
         BarangayEntity::class, TapstandEntity::class, ApplicantEntity::class,
-        PhotoEntity::class, SyncMetaEntity::class, BoundaryEntity::class,
+        PhotoEntity::class, SyncMetaEntity::class, BoundaryEntity::class, MapLayerEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class LocalDb : RoomDatabase() {
@@ -215,6 +258,7 @@ abstract class LocalDb : RoomDatabase() {
     abstract fun photos(): PhotoDao
     abstract fun syncMeta(): SyncMetaDao
     abstract fun boundaryDao(): BoundaryDao
+    abstract fun mapLayers(): MapLayerDao
 
     /** Wipe synced data (sign-out / switch user). Map layers (boundaries) are kept. */
     suspend fun clearProjectData() = withContext(Dispatchers.IO) {
@@ -225,6 +269,7 @@ abstract class LocalDb : RoomDatabase() {
             db.execSQL("DELETE FROM tapstands")
             db.execSQL("DELETE FROM applicants")
             db.execSQL("DELETE FROM photos")
+            db.execSQL("DELETE FROM map_layers")
             db.execSQL("DELETE FROM sync_meta")
             db.setTransactionSuccessful()
         } finally {
@@ -233,8 +278,22 @@ abstract class LocalDb : RoomDatabase() {
     }
 
     companion object {
+        /** v1 → v2: shared map layers. Keeps unsynced field data. */
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `map_layers` (`id` TEXT NOT NULL, `projectId` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+                        "`storagePath` TEXT NOT NULL, `fileType` TEXT NOT NULL, `strokeColor` INTEGER NOT NULL, `fillColor` INTEGER NOT NULL, " +
+                        "`weight` REAL NOT NULL, `showLabel` INTEGER NOT NULL, `defaultVisible` INTEGER NOT NULL, `deleted` INTEGER NOT NULL, " +
+                        "`syncVersion` INTEGER NOT NULL, `updatedAt` TEXT NOT NULL, `localFile` TEXT, `localVersion` TEXT, `userVisible` INTEGER, " +
+                        "PRIMARY KEY(`id`))"
+                )
+            }
+        }
+
         fun create(context: Context): LocalDb =
             Room.databaseBuilder(context.applicationContext, LocalDb::class.java, "taptrack_v6.db")
+                .addMigrations(MIGRATION_1_2)
                 .fallbackToDestructiveMigration()
                 .build()
     }

@@ -132,6 +132,19 @@ class SupabaseClient(
         }
     }
 
+    /** Download a Storage object (private bucket) as bytes. */
+    suspend fun downloadFile(bucket: String, path: String): ByteArray {
+        ensureFreshToken()
+        return withContext(Dispatchers.IO) {
+            val req = authed("$baseUrl/storage/v1/object/$bucket/$path").get().build()
+            http.newCall(req).execute().use { res ->
+                if (res.code == 401) throw AuthExpiredException()
+                if (!res.isSuccessful) throw ApiException(res.code, "Download failed (${res.code})")
+                res.body?.bytes() ?: ByteArray(0)
+            }
+        }
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private fun authed(url: String): Request.Builder =

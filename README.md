@@ -28,7 +28,8 @@ App id `com.taptrack.field`, so it installs beside the old v5 app.
 ## Features (Phase 1)
 - **Map:**
   - Status-coloured tapstands, with a toggle to show or hide proposed ones.
-  - Satellite view, offline area download, KML/KMZ/shapefile/GPX layers.
+  - Satellite view and offline area download.
+  - Shared map layers (barangay boundaries, pipelines): added by the office on the web (Settings → Map layers), downloaded on sync, usable offline. Phones can only switch them on/off.
   - Place search, compass, route (OSRM) and Google Maps directions.
   - Long-press to add a tapstand.
 - **Tapstands:**

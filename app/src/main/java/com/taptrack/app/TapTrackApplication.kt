@@ -30,7 +30,7 @@ class AppContainer(app: Application) {
     val session = SessionStore(app)
     val api = SupabaseClient(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, session)
     val db = LocalDb.create(app)
-    val sync = SyncManager(db, api, session, scope)
+    val sync = SyncManager(db, api, session, scope, java.io.File(app.filesDir, "layers"))
     val boundaryRepository = BoundaryRepository(db.boundaryDao())
 
     /**

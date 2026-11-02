@@ -3,6 +3,7 @@ package com.taptrack.app.data.sync
 import com.taptrack.app.data.local.ApplicantEntity
 import com.taptrack.app.data.local.BarangayEntity
 import com.taptrack.app.data.local.LocalDb
+import com.taptrack.app.data.local.MapLayerEntity
 import com.taptrack.app.data.local.SyncMetaEntity
 import com.taptrack.app.data.local.TapstandEntity
 import com.taptrack.app.data.remote.ApiException
@@ -46,6 +47,7 @@ class SyncManager(
     private val api: SupabaseClient,
     private val session: SessionStore,
     private val scope: CoroutineScope,
+    private val layersDir: File,          // where shared map layers (GeoJSON) are kept for offline use
 ) {
     private val _state = MutableStateFlow(SyncState())
     val state: StateFlow<SyncState> = _state.asStateFlow()
@@ -72,6 +74,8 @@ class SyncManager(
             pullBarangays(projectId)
             pullTapstands(projectId)
             pullApplicants(projectId)
+            pullMapLayers(projectId)
+            downloadMapLayers()
             val now = System.currentTimeMillis()
             db.syncMeta().put(SyncMetaEntity("last_sync", now.toString()))
             _state.value = SyncState(
@@ -169,6 +173,36 @@ class SyncManager(
         db.applicants().upsertAll(rows.filter { it.getString("id") !in dirty }.map { applicantFromServer(it) })
     }
 
+    private suspend fun pullMapLayers(projectId: String) = pullTable(projectId, "map_layers", MAP_LAYER_COLS) { rows ->
+        val existing = db.mapLayers().all().associateBy { it.id }
+        db.mapLayers().upsertAll(rows.map { o ->
+            val old = existing[o.getString("id")]
+            mapLayerFromServer(o).copy(localFile = old?.localFile, localVersion = old?.localVersion, userVisible = old?.userVisible)
+        })
+    }
+
+    /** Keep a local copy of every shared layer; re-download when the office changes it; delete removed ones. */
+    private suspend fun downloadMapLayers() {
+        layersDir.mkdirs()
+        for (l in db.mapLayers().all()) {
+            val file = File(layersDir, "${l.id}.geojson")
+            if (l.deleted) {
+                if (l.localFile != null) { file.delete(); db.mapLayers().markDownloaded(l.id, null, null) }
+                continue
+            }
+            if (l.localVersion == l.updatedAt && file.exists()) continue
+            try {
+                val bytes = api.downloadFile("media", l.storagePath)
+                val tmp = File(layersDir, "${l.id}.tmp")
+                tmp.writeBytes(bytes)
+                if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file) }
+                db.mapLayers().markDownloaded(l.id, file.absolutePath, l.updatedAt)
+            } catch (e: ApiException) {
+                // file missing or not allowed — keep the old copy, try again next sync
+            }
+        }
+    }
+
     private suspend fun pullTable(projectId: String, table: String, cols: String, save: suspend (List<JSONObject>) -> Unit) {
         val key = "v_$table"
         var since = db.syncMeta().get(key)?.toLongOrNull() ?: 0L
@@ -184,6 +218,7 @@ class SyncManager(
     }
 
     companion object {
+        const val MAP_LAYER_COLS = "id,project_id,name,storage_path,file_type,style,is_visible,updated_at,deleted_at,sync_version"
         const val TAPSTAND_COLS = "id,project_id,code,barangay_id,sitio,location_desc,lat,lng,status,max_connections," +
             "installed_on,remarks,is_draft,draft_label,planned_lat,planned_lng,plan_source,deleted_at,sync_version"
         const val APPLICANT_COLS = "id,project_id,application_no,last_name,first_name,middle_name,suffix,contact_no," +
@@ -273,4 +308,43 @@ fun ApplicantEntity.toServerJson(withKeys: Boolean): JSONObject = JSONObject().a
     putNullable("meter_slot", meterSlot)
     putNullable("meter_serial", meterSerial)
     putNullable("remarks", remarks)
+}
+
+// ── Shared map layers ─────────────────────────────────────────────────────────
+
+/** "#RRGGBB" or "#AARRGGBB" → ARGB int (fallback teal). */
+private fun parseHex(c: String?, fallback: Int = 0xFF0F766E.toInt()): Int = try {
+    val h = c?.trim()?.removePrefix("#") ?: ""
+    when (h.length) {
+        6 -> (0xFF000000 or h.toLong(16)).toInt()
+        8 -> h.toLong(16).toInt()
+        else -> fallback
+    }
+} catch (_: Exception) { fallback }
+
+fun mapLayerFromServer(o: JSONObject): MapLayerEntity {
+    val st = o.optJSONObject("style") ?: JSONObject()
+    val stroke = parseHex(st.optStringOrNull("stroke")) or 0xFF000000.toInt()
+    val fillRaw = st.optStringOrNull("fill")
+    val fillRgb = parseHex(fillRaw, stroke) and 0x00FFFFFF
+    val opacity = when {
+        st.has("fillOpacity") -> st.optDouble("fillOpacity", 0.12)
+        fillRaw?.removePrefix("#")?.length == 8 -> ((parseHex(fillRaw) ushr 24) and 0xFF) / 255.0
+        else -> 0.12
+    }.coerceIn(0.0, 1.0)
+    return MapLayerEntity(
+        id = o.getString("id"),
+        projectId = o.getString("project_id"),
+        name = o.optString("name", "Layer"),
+        storagePath = o.getString("storage_path"),
+        fileType = o.optString("file_type", "geojson"),
+        strokeColor = stroke,
+        fillColor = ((opacity * 255).toInt() shl 24) or fillRgb,
+        weight = st.optDouble("weight", 2.0).toFloat(),
+        showLabel = st.optBoolean("showLabel", true),
+        defaultVisible = o.optBoolean("is_visible", true),
+        deleted = !o.isNull("deleted_at"),
+        syncVersion = o.optLong("sync_version", 0),
+        updatedAt = o.optString("updated_at", ""),
+    )
 }

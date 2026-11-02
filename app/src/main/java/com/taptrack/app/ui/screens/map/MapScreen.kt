@@ -10,8 +10,6 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -41,11 +39,10 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.taptrack.app.AppContainer
 import com.taptrack.app.data.local.TapstandEntity
-import com.taptrack.app.data.local.entity.BoundaryEntity
+import com.taptrack.app.data.local.MapLayerEntity
+import com.taptrack.app.data.local.visible
 import com.taptrack.app.ui.TsKind
 import com.taptrack.app.ui.TsStatus
-import com.taptrack.app.ui.components.BoundaryColorEditDialog
-import com.taptrack.app.ui.components.BoundaryManagerSheet
 import com.taptrack.app.ui.components.MapDownloadDialog
 import com.taptrack.app.ui.components.MapPin
 import com.taptrack.app.ui.components.MapSearchBar
@@ -75,9 +72,8 @@ fun MapScreen(
     val vm: MapViewModel = viewModel(factory = MapViewModel.factory(container))
     val tapstands by vm.tapstands.collectAsStateWithLifecycle()
     val barangays by vm.barangays.collectAsStateWithLifecycle()
-    val boundaries by vm.boundaries.collectAsStateWithLifecycle()
-    val boundaryOverlays by vm.boundaryOverlays.collectAsStateWithLifecycle()
-    val importState by vm.importState.collectAsStateWithLifecycle()
+    val layers by vm.layers.collectAsStateWithLifecycle()
+    val boundaryOverlays by vm.overlays.collectAsStateWithLifecycle()
     val canEdit = container.session.canEdit
 
     val locationPermissions = rememberMultiplePermissionsState(
@@ -95,7 +91,6 @@ fun MapScreen(
     var showDownload by remember { mutableStateOf(false) }
     var showLayers by remember { mutableStateOf(false) }
     var showLegend by remember { mutableStateOf(true) }
-    var editingBoundary by remember { mutableStateOf<BoundaryEntity?>(null) }
     var route by remember { mutableStateOf<RouteResult?>(null) }
     var routeLoading by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<TapstandEntity?>(null) }
@@ -120,16 +115,6 @@ fun MapScreen(
         onDispose { sm.unregisterListener(listener) }
     }
 
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { vm.importBoundary(context, it) }
-    }
-    LaunchedEffect(importState) {
-        when (val s = importState) {
-            is BoundaryImportState.Success -> { Toast.makeText(context, "Layer \"${s.name}\" added", Toast.LENGTH_SHORT).show(); vm.clearImportState() }
-            is BoundaryImportState.Error -> { Toast.makeText(context, s.message, Toast.LENGTH_LONG).show(); vm.clearImportState() }
-            else -> {}
-        }
-    }
     LaunchedEffect(locationPermissions.allPermissionsGranted) { if (locationPermissions.allPermissionsGranted) locateTrigger++ }
 
     val pins = remember(tapstands, showProposed) {
@@ -222,7 +207,7 @@ fun MapScreen(
             MapControl(Icons.Default.Flag, if (showProposed) "Hide proposed" else "Show proposed", active = showProposed) { showProposed = !showProposed }
             MapControl(Icons.Default.Satellite, "Satellite", active = satellite) { satellite = !satellite; prefs.edit().putBoolean("satellite", satellite).apply() }
             MapControl(Icons.Default.Download, "Download map area") { showDownload = true }
-            MapControl(Icons.Default.Layers, "Map layers", active = boundaries.isNotEmpty()) { showLayers = true }
+            MapControl(Icons.Default.Layers, "Map layers", active = layers.any { it.visible }) { showLayers = true }
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.size(48.dp).shadow(4.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))
@@ -280,21 +265,8 @@ fun MapScreen(
 
     if (showLayers) {
         ModalBottomSheet(onDismissRequest = { showLayers = false }) {
-            BoundaryManagerSheet(
-                boundaries = boundaries,
-                onToggleVisibility = { vm.toggleVisibility(it) },
-                onDelete = { vm.deleteBoundary(it) },
-                onEditStyle = { b -> editingBoundary = b; showLayers = false },
-                onImport = { showLayers = false; importLauncher.launch(arrayOf("*/*")) },
-            )
+            LayersSheet(layers, onToggle = { vm.toggleLayer(it) })
         }
-    }
-    editingBoundary?.let { entity ->
-        BoundaryColorEditDialog(
-            entity = entity,
-            onDismiss = { editingBoundary = null },
-            onApply = { fill, border, label -> vm.updateBoundaryStyle(entity, fill, border, label); editingBoundary = null },
-        )
     }
     if (showDownload) {
         mapViewRef?.let { MapDownloadDialog(mapView = it, onDismiss = { showDownload = false }) }
@@ -306,6 +278,35 @@ private fun openDirections(context: Context, lat: Double, lng: Double) {
     val intent = Intent(Intent.ACTION_VIEW, uri)
     try { context.startActivity(intent) } catch (_: Exception) {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:$lat,$lng?q=$lat,$lng")))
+    }
+}
+
+/** Shared layers from the web (view-only here: just on/off on this phone). */
+@Composable
+private fun LayersSheet(layers: List<MapLayerEntity>, onToggle: (MapLayerEntity) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Map layers", style = MaterialTheme.typography.titleMedium)
+        Text("Added and styled by the office in the web app (Settings → Map layers). They download with sync and work offline.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (layers.isEmpty()) {
+            Surface(color = Web.Slate100, shape = RoundedCornerShape(8.dp)) {
+                Text("No layers yet. Ask the office to add barangay boundaries or pipelines in the web app, then sync.",
+                    Modifier.fillMaxWidth().padding(12.dp), style = MaterialTheme.typography.bodySmall, color = Web.Slate600)
+            }
+        }
+        layers.forEach { l ->
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onToggle(l) }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(16.dp).clip(RoundedCornerShape(3.dp)).background(Color(l.fillColor or 0x33000000))
+                    .border(2.dp, Color(l.strokeColor), RoundedCornerShape(3.dp)))
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(l.name, style = MaterialTheme.typography.bodyMedium)
+                    if (l.localFile == null) Text("Not downloaded yet — sync while online", style = MaterialTheme.typography.labelSmall, color = Web.Amber700)
+                }
+                Switch(checked = l.visible, onCheckedChange = { onToggle(l) }, enabled = l.localFile != null)
+            }
+        }
     }
 }
 
