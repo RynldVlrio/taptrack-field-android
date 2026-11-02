@@ -1,0 +1,2 @@
+-keep class com.taptrack.app.data.** { *; }
+-keep class org.osmdroid.** { *; }

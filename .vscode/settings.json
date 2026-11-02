@@ -1,0 +1,6 @@
+{
+    "java.configuration.updateBuildConfiguration": "automatic",
+    // Import/build with Android Studio's bundled JDK (Java 17/21).
+    // VS Code's default Java 25 is too new for Gradle 8.7 / Android Gradle Plugin 8.4.
+    "java.import.gradle.java.home": "C:\\Program Files\\Android\\Android Studio\\jbr"
+}
