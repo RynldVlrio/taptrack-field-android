@@ -64,7 +64,7 @@ fun ApplicantListScreen(container: AppContainer, onOpen: (String) -> Unit, onAdd
     Scaffold(
         topBar = { TopAppBar(title = { Text("Applicants") }) },
         floatingActionButton = {
-            if (container.session.canEdit) ExtendedFloatingActionButton(onClick = onAdd, icon = { Icon(Icons.Default.Add, null) }, text = { Text("New") })
+            if (container.session.canAdd) ExtendedFloatingActionButton(onClick = onAdd, icon = { Icon(Icons.Default.Add, null) }, text = { Text("New") })
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {

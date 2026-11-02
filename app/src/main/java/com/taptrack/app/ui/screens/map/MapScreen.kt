@@ -81,6 +81,7 @@ fun MapScreen(
     val applicants by vm.applicants.collectAsStateWithLifecycle()
     val boundaryOverlays by vm.overlays.collectAsStateWithLifecycle()
     val canEdit = container.session.canEdit
+    val canAdd = container.session.canAdd
 
     val locationPermissions = rememberMultiplePermissionsState(
         listOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -254,7 +255,7 @@ fun MapScreen(
                     OutlinedButton(onClick = { selected = null; routeTo(t.lat, t.lng) }) { Text("Route") }
                     OutlinedButton(onClick = { openDirections(context, t.lat, t.lng) }) { Text("Directions") }
                 }
-                if (canEdit && t.kind == TsKind.OFFICIAL && t.status !in setOf("inactive", "decommissioned")) {
+                if (canAdd && t.kind == TsKind.OFFICIAL && t.status !in setOf("inactive", "decommissioned")) {
                     FilledTonalButton(onClick = { selected = null; onAddApplicant(null, null, t.id) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.PersonAdd, null); Spacer(Modifier.width(6.dp)); Text("New applicant on this tapstand")
                     }
@@ -269,7 +270,7 @@ fun MapScreen(
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Selected point", style = MaterialTheme.typography.titleMedium)
                 Text(formatCoordinates(p.latitude, p.longitude), style = MaterialTheme.typography.bodySmall)
-                if (canEdit) {
+                if (canAdd) {
                     Button(onClick = { pressPoint = null; searchPin = null; onAddTapstand(p.latitude, p.longitude) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Add tapstand here")
                     }

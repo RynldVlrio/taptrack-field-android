@@ -79,7 +79,7 @@ fun ApplicantEditScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val projectId = container.session.projectId ?: ""
-    val canEdit = container.session.canEdit
+    val canEdit = if (applicantId == null) container.session.canAdd else container.session.canEdit
     val isOffice = container.session.isOffice
     val barangays by remember { container.db.barangays().observe(projectId) }.collectAsStateWithLifecycle(emptyList())
     val tapstands by remember { container.db.tapstands().observe(projectId) }.collectAsStateWithLifecycle(emptyList())

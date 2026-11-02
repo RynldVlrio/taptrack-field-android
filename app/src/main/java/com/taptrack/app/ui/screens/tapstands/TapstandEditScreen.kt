@@ -66,7 +66,8 @@ fun TapstandEditScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val projectId = container.session.projectId ?: ""
-    val canEdit = container.session.canEdit
+    val canEdit = if (tapstandId == null) container.session.canAdd else container.session.canEdit
+    val canAdd = container.session.canAdd
     val barangays by remember { container.db.barangays().observe(projectId) }.collectAsStateWithLifecycle(emptyList())
     val allTapstands by remember { container.db.tapstands().observe(projectId) }.collectAsStateWithLifecycle(emptyList())
     val allApplicants by remember { container.db.applicants().observe(projectId) }.collectAsStateWithLifecycle(emptyList())
@@ -337,7 +338,7 @@ fun TapstandEditScreen(
                         }
                     }
                 }
-                if (canEdit && original?.status !in setOf("inactive", "decommissioned")) {
+                if (canAdd && original?.status !in setOf("inactive", "decommissioned")) {
                     OutlinedButton(onClick = { onAddApplicant(tapstandId) }) { Icon(Icons.Default.PersonAdd, null); Spacer(Modifier.width(6.dp)); Text("New applicant on this tapstand") }
                 }
             }

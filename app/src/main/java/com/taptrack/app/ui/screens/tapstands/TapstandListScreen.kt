@@ -59,7 +59,7 @@ fun TapstandListScreen(
     Scaffold(
         topBar = { TopAppBar(title = { Text("Tapstands") }) },
         floatingActionButton = {
-            if (container.session.canEdit) ExtendedFloatingActionButton(onClick = onAdd, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Add") })
+            if (container.session.canAdd) ExtendedFloatingActionButton(onClick = onAdd, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Add") })
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {

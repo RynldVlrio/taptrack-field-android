@@ -30,8 +30,15 @@ class SessionStore(context: Context) {
     val projectName: String get() = prefs.getString(K_PROJECT_NAME, null) ?: ""
     val projectPrefix: String get() = prefs.getString(K_PREFIX, null) ?: ""
     val role: String get() = prefs.getString(K_ROLE, null) ?: "viewer"
+    /** Edit existing records (everyone except viewer). */
     val canEdit: Boolean get() = role != "viewer"
-    val isOffice: Boolean get() = role == "admin" || role == "office"
+    /** Add new tapstands / applicants (manager supervises but doesn't encode). */
+    val canAdd: Boolean get() = role in setOf("admin", "co_admin", "office", "field")
+    /** Office-level decisions (and can change approved applicants). */
+    val isOffice: Boolean get() = role in setOf("admin", "co_admin", "manager", "office")
+    val roleLabel: String get() = when (role) {
+        "admin" -> "Admin"; "co_admin" -> "Co-admin"; "manager" -> "Manager"; "office" -> "Office"; "field" -> "Field"; else -> "Viewer"
+    }
 
     fun saveTokens(access: String, refresh: String, expiresInSec: Long) {
         accessToken = access

@@ -39,7 +39,7 @@ fun MoreScreen(container: AppContainer) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(s.fullName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(s.email ?: "", style = MaterialTheme.typography.bodySmall)
-                    Text("${s.projectName}  ·  role: ${s.role}", style = MaterialTheme.typography.bodySmall)
+                    Text("${s.projectName}  ·  role: ${s.roleLabel}", style = MaterialTheme.typography.bodySmall)
                 }
             }
             Card(Modifier.fillMaxWidth()) {
