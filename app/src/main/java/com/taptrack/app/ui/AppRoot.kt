@@ -1,16 +1,16 @@
 package com.taptrack.app.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Map
-import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.taptrack.app.ui.theme.Web
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -28,11 +28,10 @@ import com.taptrack.app.ui.screens.tapstands.TapstandListScreen
 
 private data class Tab(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
 
-@Suppress("DEPRECATION")
 private val tabs = listOf(
-    Tab("map", "Map", Icons.Default.Map),
-    Tab("tapstands", "Tapstands", Icons.Default.List),
-    Tab("more", "More", Icons.Default.MoreHoriz),
+    Tab("map", "Map", WebIcons.Map),
+    Tab("tapstands", "Tapstands", WebIcons.Tapstands),
+    Tab("more", "Settings", WebIcons.Settings),
 )
 
 @Composable
@@ -60,7 +59,9 @@ private fun MainShell(container: AppContainer) {
 
     Scaffold(
         bottomBar = {
-            if (showBar) NavigationBar {
+            if (showBar) Column {
+              HorizontalDivider(color = Web.Slate200)
+              NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
                 tabs.forEach { t ->
                     NavigationBarItem(
                         selected = route == t.route,
@@ -71,8 +72,13 @@ private fun MainShell(container: AppContainer) {
                             }
                         },
                         icon = { Icon(t.icon, null) }, label = { Text(t.label) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Web.Teal800, selectedTextColor = Web.Teal800, indicatorColor = Web.Teal50,
+                            unselectedIconColor = Web.Slate600, unselectedTextColor = Web.Slate600,
+                        ),
                     )
                 }
+              }
             }
         },
     ) { pad ->

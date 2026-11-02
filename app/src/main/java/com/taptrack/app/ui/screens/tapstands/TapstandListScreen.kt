@@ -27,6 +27,7 @@ import com.taptrack.app.ui.TsKind
 import com.taptrack.app.ui.TsStatus
 import com.taptrack.app.ui.kind
 import com.taptrack.app.ui.label
+import com.taptrack.app.ui.screens.map.StatusBadge
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,7 +94,7 @@ fun TapstandListScreen(
                     items(shown, key = { it.id }) { t ->
                         ListItem(
                             modifier = Modifier.clickable { onOpen(t.id) },
-                            leadingContent = { Box(Modifier.size(14.dp).clip(CircleShape).background(TsStatus.color(t.status))) },
+                            leadingContent = { StatusBadge(t.status, 22f) },
                             headlineContent = { Text(t.label, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             supportingContent = {
                                 Text(listOfNotNull(TsStatus.of(t.status).label, brgyName[t.barangayId], t.sitio).joinToString(" · "),

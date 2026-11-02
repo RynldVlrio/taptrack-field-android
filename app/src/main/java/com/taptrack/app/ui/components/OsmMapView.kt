@@ -27,6 +27,7 @@ import com.taptrack.app.utils.createBoundaryLabelBitmap
 import com.taptrack.app.utils.createLocationDotBitmap
 import com.taptrack.app.utils.createSearchPinBitmap
 import com.taptrack.app.utils.createTapMarkerBitmap
+import com.taptrack.app.utils.statusPinDrawable
 import com.taptrack.app.utils.getLastKnownLocation
 import com.taptrack.app.utils.tileSourceFor
 import org.osmdroid.events.MapEventsReceiver
@@ -51,6 +52,7 @@ data class MapPin(
     val color: Int,          // ARGB
     val title: String,
     val small: Boolean = false, // small dot (e.g. applicant house) instead of a tapstand pin
+    val status: String? = null, // tapstand status → web-style pin with status glyph
 )
 
 // Pinamalayan, Oriental Mindoro
@@ -275,10 +277,14 @@ fun OsmMapView(
         pinMarkers.forEach { mapView.overlays.remove(it) }
         pinMarkers.clear()
         // houses first so tapstand pins draw on top
-        pins.sortedBy { if (it.small) 0 else 1 }.forEach { pin ->
-            val key = "${pin.color}|${pin.small}"
+        pins.sortedBy { when { it.small -> 0; it.status == "proposed" || it.status == "cancelled" -> 1; else -> 2 } }.forEach { pin ->
+            val key = "${pin.color}|${pin.small}|${pin.status}"
             val icon = iconCache.getOrPut(key) {
-                if (pin.small) createDotBitmap(context, pin.color) else createTapMarkerBitmap(context, pin.color)
+                when {
+                    pin.small -> createDotBitmap(context, pin.color)
+                    pin.status != null -> statusPinDrawable(context, pin.status, pin.color)
+                    else -> createTapMarkerBitmap(context, pin.color)
+                }
             }
             val marker = Marker(mapView).apply {
                 position = GeoPoint(pin.lat, pin.lng)

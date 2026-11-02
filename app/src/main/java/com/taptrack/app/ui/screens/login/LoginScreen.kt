@@ -1,6 +1,7 @@
 package com.taptrack.app.ui.screens.login
 
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -12,7 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -20,7 +22,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.taptrack.app.AppContainer
-import com.taptrack.app.R
+import com.taptrack.app.ui.theme.Web
 import com.taptrack.app.data.remote.ApiException
 import kotlinx.coroutines.launch
 import java.io.IOException
@@ -54,14 +56,17 @@ fun LoginScreen(container: AppContainer, reLogin: Boolean = false) {
         }
     }
 
-    Surface(Modifier.fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
         ) {
-            Image(painterResource(R.drawable.taptrack_logo), contentDescription = null, modifier = Modifier.size(96.dp))
+            // Same "TT" mark as the web app
+            Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(Web.Teal700), contentAlignment = Alignment.Center) {
+                Text("TT", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+            }
             Spacer(Modifier.height(12.dp))
-            Text("TapTrack Field", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("TapTrack Field", style = MaterialTheme.typography.headlineSmall, color = Web.Teal800)
             Text(if (reLogin) "Your session expired — sign in again. Unsynced changes are kept."
                  else "Sign in with your TapTrack account", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)

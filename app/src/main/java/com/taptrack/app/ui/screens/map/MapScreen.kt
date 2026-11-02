@@ -13,7 +13,9 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -29,6 +31,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -49,12 +52,14 @@ import com.taptrack.app.ui.components.MapSearchBar
 import com.taptrack.app.ui.components.OsmMapView
 import com.taptrack.app.ui.kind
 import com.taptrack.app.ui.label
+import com.taptrack.app.ui.theme.Web
 import com.taptrack.app.utils.RouteResult
 import com.taptrack.app.utils.fetchRoute
 import com.taptrack.app.utils.formatCoordinates
 import com.taptrack.app.utils.formatDistance
 import com.taptrack.app.utils.formatDuration
 import com.taptrack.app.utils.getLastKnownLocation
+import com.taptrack.app.utils.statusBadgeBitmap
 import kotlinx.coroutines.launch
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -89,7 +94,7 @@ fun MapScreen(
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
     var showDownload by remember { mutableStateOf(false) }
     var showLayers by remember { mutableStateOf(false) }
-    var showLegend by remember { mutableStateOf(false) }
+    var showLegend by remember { mutableStateOf(true) }
     var editingBoundary by remember { mutableStateOf<BoundaryEntity?>(null) }
     var route by remember { mutableStateOf<RouteResult?>(null) }
     var routeLoading by remember { mutableStateOf(false) }
@@ -129,7 +134,7 @@ fun MapScreen(
 
     val pins = remember(tapstands, showProposed) {
         tapstands.filter { it.kind == TsKind.OFFICIAL || (showProposed && it.kind == TsKind.PROPOSED) }
-            .map { MapPin(it.id, it.lat, it.lng, TsStatus.argb(it.status), it.label) }
+            .map { MapPin(it.id, it.lat, it.lng, TsStatus.argb(it.status), it.label, status = it.status) }
     }
 
     fun routeTo(lat: Double, lng: Double) {
@@ -194,13 +199,15 @@ fun MapScreen(
 
         if (showLegend) {
             Card(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
-                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Legend", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
                     TsStatus.all.filter { it.key != "cancelled" }.forEach { s ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(10.dp).clip(CircleShape).background(Color(s.color)))
+                            StatusBadge(s.key)
                             Spacer(Modifier.width(6.dp))
-                            Text(s.label + if (s.key == "proposed") " (to verify)" else "", style = MaterialTheme.typography.labelSmall)
+                            Text(s.label, style = MaterialTheme.typography.labelSmall)
+                            if (s.key == "proposed") Text(" — to verify, not counted", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -211,21 +218,16 @@ fun MapScreen(
             Modifier.align(Alignment.BottomEnd).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.End,
         ) {
-            SmallFloatingActionButton(onClick = { showLegend = !showLegend }) { Icon(Icons.Default.Info, "Legend") }
-            SmallFloatingActionButton(onClick = { showProposed = !showProposed },
-                containerColor = if (showProposed) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface) {
-                Icon(Icons.Default.Flag, if (showProposed) "Hide proposed" else "Show proposed")
-            }
-            SmallFloatingActionButton(onClick = { satellite = !satellite; prefs.edit().putBoolean("satellite", satellite).apply() },
-                containerColor = if (satellite) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface) {
-                Icon(Icons.Default.Satellite, "Satellite")
-            }
-            SmallFloatingActionButton(onClick = { showDownload = true }) { Icon(Icons.Default.Download, "Download map area") }
-            SmallFloatingActionButton(onClick = { showLayers = true },
-                containerColor = if (boundaries.isNotEmpty()) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface) {
-                Icon(Icons.Default.Layers, "Map layers")
-            }
-            FloatingActionButton(onClick = { locateTrigger++ }) { Icon(Icons.Default.MyLocation, "My location") }
+            MapControl(Icons.Default.Info, "Legend", active = showLegend) { showLegend = !showLegend }
+            MapControl(Icons.Default.Flag, if (showProposed) "Hide proposed" else "Show proposed", active = showProposed) { showProposed = !showProposed }
+            MapControl(Icons.Default.Satellite, "Satellite", active = satellite) { satellite = !satellite; prefs.edit().putBoolean("satellite", satellite).apply() }
+            MapControl(Icons.Default.Download, "Download map area") { showDownload = true }
+            MapControl(Icons.Default.Layers, "Map layers", active = boundaries.isNotEmpty()) { showLayers = true }
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(48.dp).shadow(4.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))
+                    .background(Web.Teal700).clickable { locateTrigger++ },
+            ) { Icon(Icons.Default.MyLocation, "My location", tint = Color.White) }
         }
     }
 
@@ -234,7 +236,7 @@ fun MapScreen(
         ModalBottomSheet(onDismissRequest = { selected = null }) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(14.dp).clip(CircleShape).background(TsStatus.color(t.status)))
+                    StatusBadge(t.status, 20f)
                     Spacer(Modifier.width(8.dp))
                     Text(t.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 }
@@ -305,6 +307,27 @@ private fun openDirections(context: Context, lat: Double, lng: Double) {
     try { context.startActivity(intent) } catch (_: Exception) {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:$lat,$lng?q=$lat,$lng")))
     }
+}
+
+/** Web-style map button: white, rounded-md, slate border; teal when switched on. */
+@Composable
+private fun MapControl(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, active: Boolean = false, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(8.dp)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(40.dp).shadow(3.dp, shape).clip(shape)
+            .background(if (active) Web.Teal50 else Color.White)
+            .border(1.dp, if (active) Web.Teal600 else Web.Slate300, shape)
+            .clickable(onClick = onClick),
+    ) { Icon(icon, label, tint = if (active) Web.Teal700 else Web.Slate700, modifier = Modifier.size(20.dp)) }
+}
+
+/** Coloured circle with the status glyph — same as the web legend. */
+@Composable
+fun StatusBadge(status: String, sizeDp: Float = 16f) {
+    val context = LocalContext.current
+    val bmp = remember(status, sizeDp) { statusBadgeBitmap(context, status, TsStatus.argb(status), sizeDp).asImageBitmap() }
+    Image(bmp, contentDescription = null, modifier = Modifier.size(sizeDp.dp))
 }
 
 @Composable

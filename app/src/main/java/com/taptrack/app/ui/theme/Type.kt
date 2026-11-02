@@ -6,26 +6,20 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
+/** Compact, web-like type scale (web: text-sm 14px body, text-xs 12px labels, semibold headings). */
+private val Sans = FontFamily.SansSerif
+private fun s(size: Int, line: Int, w: FontWeight = FontWeight.Normal, track: Double = 0.0) =
+    TextStyle(fontFamily = Sans, fontWeight = w, fontSize = size.sp, lineHeight = line.sp, letterSpacing = track.sp)
+
 val Typography = Typography(
-    bodyLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.5.sp
-    ),
-    titleLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = 0.sp
-    ),
-    labelSmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 11.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
-    )
+    headlineSmall = s(22, 28, FontWeight.SemiBold),
+    titleLarge = s(18, 24, FontWeight.SemiBold),
+    titleMedium = s(15, 22, FontWeight.SemiBold),
+    titleSmall = s(13, 18, FontWeight.SemiBold),
+    bodyLarge = s(15, 22),
+    bodyMedium = s(14, 20),
+    bodySmall = s(12, 16),
+    labelLarge = s(14, 20, FontWeight.Medium),
+    labelMedium = s(12, 16, FontWeight.Medium),
+    labelSmall = s(11, 14, FontWeight.Medium),
 )

@@ -32,7 +32,7 @@ fun MoreScreen(container: AppContainer) {
     var confirmSignOut by remember { mutableStateOf(false) }
     val pending = pendingTs + pendingApp + pendingPhotos
 
-    Scaffold(topBar = { TopAppBar(title = { Text("More") }) }) { pad ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Card(Modifier.fillMaxWidth()) {
