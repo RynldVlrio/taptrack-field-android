@@ -20,6 +20,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.taptrack.app.AppContainer
+import com.taptrack.app.ui.screens.applicants.ApplicantEditScreen
+import com.taptrack.app.ui.screens.applicants.ApplicantListScreen
 import com.taptrack.app.ui.screens.login.LoginScreen
 import com.taptrack.app.ui.screens.map.MapScreen
 import com.taptrack.app.ui.screens.more.MoreScreen
@@ -31,6 +33,7 @@ private data class Tab(val route: String, val label: String, val icon: androidx.
 private val tabs = listOf(
     Tab("map", "Map", WebIcons.Map),
     Tab("tapstands", "Tapstands", WebIcons.Tapstands),
+    Tab("applicants", "Applicants", WebIcons.Applicants),
     Tab("more", "Settings", WebIcons.Settings),
 )
 
@@ -53,6 +56,9 @@ private fun MainShell(container: AppContainer) {
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     val showBar = tabs.any { it.route == route }
+
+    fun appRoute(id: String? = null, lat: Double? = null, lng: Double? = null, ts: String? = null) =
+        "applicant_edit?id=${id ?: ""}&lat=${lat ?: ""}&lng=${lng ?: ""}&ts=${ts ?: ""}"
 
     fun editRoute(id: String? = null, lat: Double? = null, lng: Double? = null) =
         "tapstand_edit?id=${id ?: ""}&lat=${lat ?: ""}&lng=${lng ?: ""}"
@@ -87,12 +93,31 @@ private fun MainShell(container: AppContainer) {
                 composable("map") {
                     MapScreen(container,
                         onOpenTapstand = { nav.navigate(editRoute(id = it)) },
-                        onAddTapstand = { lat, lng -> nav.navigate(editRoute(lat = lat, lng = lng)) })
+                        onAddTapstand = { lat, lng -> nav.navigate(editRoute(lat = lat, lng = lng)) },
+                        onOpenApplicant = { nav.navigate(appRoute(id = it)) },
+                        onAddApplicant = { lat, lng, ts -> nav.navigate(appRoute(lat = lat, lng = lng, ts = ts)) })
                 }
                 composable("tapstands") {
                     TapstandListScreen(container, onOpen = { nav.navigate(editRoute(id = it)) }, onAdd = { nav.navigate(editRoute()) })
                 }
+                composable("applicants") {
+                    ApplicantListScreen(container, onOpen = { nav.navigate(appRoute(id = it)) }, onAdd = { nav.navigate(appRoute()) })
+                }
                 composable("more") { MoreScreen(container) }
+                composable(
+                    "applicant_edit?id={id}&lat={lat}&lng={lng}&ts={ts}",
+                    arguments = listOf("id", "lat", "lng", "ts").map { n -> navArgument(n) { type = NavType.StringType; nullable = true; defaultValue = null } },
+                ) { entry ->
+                    val a = entry.arguments
+                    ApplicantEditScreen(
+                        container = container,
+                        applicantId = a?.getString("id")?.takeIf { it.isNotBlank() },
+                        initialLat = a?.getString("lat")?.toDoubleOrNull(),
+                        initialLng = a?.getString("lng")?.toDoubleOrNull(),
+                        initialTapstandId = a?.getString("ts")?.takeIf { it.isNotBlank() },
+                        onDone = { nav.popBackStack() },
+                    )
+                }
                 composable(
                     "tapstand_edit?id={id}&lat={lat}&lng={lng}",
                     arguments = listOf(
@@ -108,6 +133,8 @@ private fun MainShell(container: AppContainer) {
                         initialLat = a?.getString("lat")?.toDoubleOrNull(),
                         initialLng = a?.getString("lng")?.toDoubleOrNull(),
                         onDone = { nav.popBackStack() },
+                        onOpenApplicant = { nav.navigate(appRoute(id = it)) },
+                        onAddApplicant = { nav.navigate(appRoute(ts = it)) },
                     )
                 }
             }

@@ -33,6 +33,10 @@ class MapViewModel(private val c: AppContainer) : ViewModel() {
         (if (projectId.isNotEmpty()) c.db.barangays().observe(projectId) else flowOf(emptyList()))
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val applicants: StateFlow<List<com.taptrack.app.data.local.ApplicantEntity>> =
+        (if (projectId.isNotEmpty()) c.db.applicants().observe(projectId) else flowOf(emptyList()))
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     // ── Shared map layers (managed by the office on the web; downloaded on sync) ──
 
     val layers: StateFlow<List<MapLayerEntity>> =

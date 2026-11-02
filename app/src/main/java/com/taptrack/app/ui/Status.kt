@@ -40,6 +40,7 @@ object AppStatus {
     )
     fun of(key: String) = all.firstOrNull { it.key == key } ?: StatusDef(key, key, 0xFF64748B)
     fun color(key: String) = Color(of(key).color)
+    fun argb(key: String) = of(key).color.toInt()
 }
 
 /** What kind of record this tapstand is in the workflow. */
@@ -68,3 +69,21 @@ fun distanceM(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
         Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
     return 2 * r * Math.asin(Math.sqrt(a))
 }
+
+/** "DELA CRUZ, JUAN M. JR" */
+val com.taptrack.app.data.local.ApplicantEntity.fullName: String
+    get() = buildString {
+        append(lastName); append(", "); append(firstName)
+        middleName?.takeIf { it.isNotBlank() }?.let { append(" "); append(it.first()); append(".") }
+        suffix?.takeIf { it.isNotBlank() }?.let { append(" "); append(it) }
+    }
+
+/** Counts toward a tapstand's meters (not rejected / cancelled / deleted). */
+val com.taptrack.app.data.local.ApplicantEntity.holdsSlot: Boolean
+    get() = !deleted && status != "rejected" && status != "cancelled"
+
+/** Statuses field staff may set on the phone; decisions are made by the office. */
+val FIELD_STATUSES = listOf("submitted", "for_validation", "validated")
+
+/** "SN-TS-001 · #3" */
+fun slotLabel(code: String?, slot: Int?) = listOfNotNull(code, slot?.let { "#$it" }).joinToString(" · ")

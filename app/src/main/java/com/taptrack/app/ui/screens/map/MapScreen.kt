@@ -42,6 +42,9 @@ import com.taptrack.app.data.local.TapstandEntity
 import com.taptrack.app.data.local.MapLayerEntity
 import com.taptrack.app.data.local.visible
 import com.taptrack.app.ui.TsKind
+import com.taptrack.app.ui.AppStatus
+import com.taptrack.app.ui.fullName
+import com.taptrack.app.ui.holdsSlot
 import com.taptrack.app.ui.TsStatus
 import com.taptrack.app.ui.components.MapDownloadDialog
 import com.taptrack.app.ui.components.MapPin
@@ -67,12 +70,15 @@ fun MapScreen(
     container: AppContainer,
     onOpenTapstand: (String) -> Unit,
     onAddTapstand: (Double, Double) -> Unit,
+    onOpenApplicant: (String) -> Unit = {},
+    onAddApplicant: (lat: Double?, lng: Double?, tapstandId: String?) -> Unit = { _, _, _ -> },
 ) {
     val context = LocalContext.current
     val vm: MapViewModel = viewModel(factory = MapViewModel.factory(container))
     val tapstands by vm.tapstands.collectAsStateWithLifecycle()
     val barangays by vm.barangays.collectAsStateWithLifecycle()
     val layers by vm.layers.collectAsStateWithLifecycle()
+    val applicants by vm.applicants.collectAsStateWithLifecycle()
     val boundaryOverlays by vm.overlays.collectAsStateWithLifecycle()
     val canEdit = container.session.canEdit
 
@@ -84,6 +90,7 @@ fun MapScreen(
     val prefs = remember { context.getSharedPreferences("tt_map", Context.MODE_PRIVATE) }
     var satellite by remember { mutableStateOf(prefs.getBoolean("satellite", false)) }
     var showProposed by remember { mutableStateOf(true) }
+    var showApplicants by remember { mutableStateOf(prefs.getBoolean("applicants", true)) }
     var locateTrigger by remember { mutableIntStateOf(0) }
     var searchTarget by remember { mutableStateOf<GeoPoint?>(null) }
     var searchPin by remember { mutableStateOf<GeoPoint?>(null) }
@@ -117,10 +124,14 @@ fun MapScreen(
 
     LaunchedEffect(locationPermissions.allPermissionsGranted) { if (locationPermissions.allPermissionsGranted) locateTrigger++ }
 
-    val pins = remember(tapstands, showProposed) {
-        tapstands.filter { it.kind == TsKind.OFFICIAL || (showProposed && it.kind == TsKind.PROPOSED) }
+    val pins = remember(tapstands, showProposed, applicants, showApplicants) {
+        val houses = if (!showApplicants) emptyList() else applicants
+            .filter { it.lat != null && it.lng != null && it.status != "cancelled" && it.status != "rejected" }
+            .map { MapPin("a:" + it.id, it.lat!!, it.lng!!, AppStatus.argb(it.status), it.fullName, small = true) }
+        houses + tapstands.filter { it.kind == TsKind.OFFICIAL || (showProposed && it.kind == TsKind.PROPOSED) }
             .map { MapPin(it.id, it.lat, it.lng, TsStatus.argb(it.status), it.label, status = it.status) }
     }
+    val usedCount = remember(applicants) { applicants.filter { it.holdsSlot && it.assignedTapstandId != null }.groupingBy { it.assignedTapstandId!! }.eachCount() }
 
     fun routeTo(lat: Double, lng: Double) {
         scope.launch {
@@ -146,7 +157,7 @@ fun MapScreen(
             boundaryOverlays = boundaryOverlays,
             searchPin = searchPin,
             modifier = Modifier.fillMaxSize(),
-            onPinClick = { id -> selected = tapstands.firstOrNull { it.id == id } },
+            onPinClick = { id -> if (id.startsWith("a:")) onOpenApplicant(id.removePrefix("a:")) else selected = tapstands.firstOrNull { it.id == id } },
             onSearchPinClick = { pressPoint = searchPin },
             onMapViewReady = { mapViewRef = it },
             onLongPress = { lat, lng, _ -> searchPin = null; pressPoint = GeoPoint(lat, lng) },
@@ -204,6 +215,9 @@ fun MapScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.End,
         ) {
             MapControl(Icons.Default.Info, "Legend", active = showLegend) { showLegend = !showLegend }
+            MapControl(Icons.Default.People, if (showApplicants) "Hide applicants" else "Show applicants", active = showApplicants) {
+                showApplicants = !showApplicants; prefs.edit().putBoolean("applicants", showApplicants).apply()
+            }
             MapControl(Icons.Default.Flag, if (showProposed) "Hide proposed" else "Show proposed", active = showProposed) { showProposed = !showProposed }
             MapControl(Icons.Default.Satellite, "Satellite", active = satellite) { satellite = !satellite; prefs.edit().putBoolean("satellite", satellite).apply() }
             MapControl(Icons.Default.Download, "Download map area") { showDownload = true }
@@ -228,12 +242,22 @@ fun MapScreen(
                 Text(TsStatus.of(t.status).label + (barangays.firstOrNull { it.id == t.barangayId }?.let { " · ${it.name}" } ?: "") +
                     (t.sitio?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodyMedium)
                 Text(formatCoordinates(t.lat, t.lng), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (t.kind == TsKind.OFFICIAL) {
+                    val used = usedCount[t.id] ?: 0
+                    Text("Meters: $used / ${t.maxConnections}" + if (used >= t.maxConnections) "  (at design capacity)" else "",
+                        style = MaterialTheme.typography.bodyMedium, color = if (used >= t.maxConnections) Web.Amber700 else Web.Slate700)
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { selected = null; onOpenTapstand(t.id) }) {
                         Text(if (t.kind == TsKind.PROPOSED && canEdit) "Open / verify" else "Open")
                     }
                     OutlinedButton(onClick = { selected = null; routeTo(t.lat, t.lng) }) { Text("Route") }
                     OutlinedButton(onClick = { openDirections(context, t.lat, t.lng) }) { Text("Directions") }
+                }
+                if (canEdit && t.kind == TsKind.OFFICIAL && t.status !in setOf("inactive", "decommissioned")) {
+                    FilledTonalButton(onClick = { selected = null; onAddApplicant(null, null, t.id) }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.PersonAdd, null); Spacer(Modifier.width(6.dp)); Text("New applicant on this tapstand")
+                    }
                 }
             }
         }
@@ -248,6 +272,9 @@ fun MapScreen(
                 if (canEdit) {
                     Button(onClick = { pressPoint = null; searchPin = null; onAddTapstand(p.latitude, p.longitude) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Add tapstand here")
+                    }
+                    FilledTonalButton(onClick = { pressPoint = null; searchPin = null; onAddApplicant(p.latitude, p.longitude, null) }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.PersonAdd, null); Spacer(Modifier.width(6.dp)); Text("New applicant (house here)")
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

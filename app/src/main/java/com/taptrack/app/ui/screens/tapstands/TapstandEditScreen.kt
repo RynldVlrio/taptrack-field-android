@@ -36,6 +36,11 @@ import com.taptrack.app.ui.components.CameraCapture
 import com.taptrack.app.ui.components.CenterPinMapView
 import com.taptrack.app.ui.distanceM
 import com.taptrack.app.ui.kind
+import com.taptrack.app.ui.AppStatus
+import com.taptrack.app.ui.fullName
+import com.taptrack.app.ui.holdsSlot
+import com.taptrack.app.ui.theme.Web
+import androidx.compose.foundation.clickable
 import com.taptrack.app.utils.getLastKnownLocation
 import kotlinx.coroutines.launch
 import java.io.File
@@ -55,6 +60,8 @@ fun TapstandEditScreen(
     initialLat: Double?,
     initialLng: Double?,
     onDone: () -> Unit,
+    onOpenApplicant: (String) -> Unit = {},
+    onAddApplicant: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -62,6 +69,7 @@ fun TapstandEditScreen(
     val canEdit = container.session.canEdit
     val barangays by remember { container.db.barangays().observe(projectId) }.collectAsStateWithLifecycle(emptyList())
     val allTapstands by remember { container.db.tapstands().observe(projectId) }.collectAsStateWithLifecycle(emptyList())
+    val allApplicants by remember { container.db.applicants().observe(projectId) }.collectAsStateWithLifecycle(emptyList())
 
     // ── Load ─────────────────────────────────────────────────────────────────
     var original by remember { mutableStateOf<TapstandEntity?>(null) }
@@ -310,6 +318,29 @@ fun TapstandEditScreen(
                     modifier = Modifier.weight(1f))
             }
             OutlinedTextField(remarks, { remarks = it }, enabled = editable, label = { Text("Remarks") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+
+            // ── Meters on this tapstand (official only) ──
+            if (kind == TsKind.OFFICIAL && tapstandId != null) {
+                val meters = allApplicants.filter { it.assignedTapstandId == tapstandId && it.holdsSlot }.sortedBy { it.meterSlot ?: 99 }
+                val cap = original?.maxConnections ?: 10
+                Text("Meters  ${meters.size} / $cap" + if (meters.size >= cap) "  · at design capacity" else "",
+                    style = MaterialTheme.typography.titleSmall, color = if (meters.size >= cap) Web.Amber700 else MaterialTheme.colorScheme.onSurface)
+                if (meters.isEmpty()) Hint("No applicants assigned yet.")
+                meters.forEach { a ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onOpenApplicant(a.id) }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("#${a.meterSlot ?: "?"}", style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(40.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(a.fullName, style = MaterialTheme.typography.bodyMedium)
+                            Text(listOfNotNull(AppStatus.of(a.status).label, a.meterSerial?.let { "meter $it" } ?: "no meter no. yet").joinToString(" · "),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                if (canEdit && original?.status !in setOf("inactive", "decommissioned")) {
+                    OutlinedButton(onClick = { onAddApplicant(tapstandId) }) { Icon(Icons.Default.PersonAdd, null); Spacer(Modifier.width(6.dp)); Text("New applicant on this tapstand") }
+                }
+            }
 
             // ── Photos ──
             Text("Photos", style = MaterialTheme.typography.titleSmall)

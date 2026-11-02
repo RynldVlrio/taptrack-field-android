@@ -41,8 +41,12 @@ App id `com.taptrack.field`, so it installs beside the old v5 app.
     - **Cancel** it with a reason, or **Reopen** it later.
   - Photos taken here upload to Storage.
 
-## Phase 2 (next)
-- Applicant intake and validation.
-- Tapstand and slot assignment: same barangay only, with the capacity warning.
-- Meter number by barcode scan.
-- House photos.
+## Features (Phase 2, v6.0.4)
+- **Applicants:** list with search (name, application no., meter no.) and status/barangay filters.
+- **Intake & validation:** new applicant (from the list, a map long-press, or a tapstand), duplicate-name warning,
+  house location by GPS or map pin, house photos. Field staff set Submitted / For validation / Validated;
+  approve, waitlist, reject and connect stay with the office (web).
+- **Assignment:** only official tapstands in the applicant's barangay, nearest first, meters used/capacity,
+  slot grid (or Auto), over-capacity warning (allowed after confirming).
+- **Meter no.:** the number printed on the meter, typed or scanned (barcode), checked for duplicates.
+- **Map:** applicant houses as small dots (toggle), tapstand sheet shows meters used and "New applicant on this tapstand".
