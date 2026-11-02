@@ -65,7 +65,15 @@ fun MoreScreen(container: AppContainer) {
             OutlinedButton(onClick = { confirmSignOut = true }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.AutoMirrored.Filled.Logout, null); Spacer(Modifier.width(8.dp)); Text("Sign out")
             }
-            Text("TapTrack Field ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("App version", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text("TapTrack Field ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedButton(onClick = { scope.launch { container.updater.check(manual = true) } }) { Text("Check for updates") }
+                }
+            }
         }
     }
 

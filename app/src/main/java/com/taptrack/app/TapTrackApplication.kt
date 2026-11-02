@@ -32,6 +32,7 @@ class AppContainer(app: Application) {
     val db = LocalDb.create(app)
     val sync = SyncManager(db, api, session, scope, java.io.File(app.filesDir, "layers"))
     val boundaryRepository = BoundaryRepository(db.boundaryDao())
+    val updater = com.taptrack.app.utils.AppUpdater(app, api, scope)
 
     /**
      * Sign in, find the user's project + role, then download the data.

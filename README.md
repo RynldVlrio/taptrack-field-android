@@ -50,3 +50,11 @@ App id `com.taptrack.field`, so it installs beside the old v5 app.
   slot grid (or Auto), over-capacity warning (allowed after confirming).
 - **Meter no.:** the number printed on the meter, typed or scanned (barcode), checked for duplicates.
 - **Map:** applicant houses as small dots (toggle), tapstand sheet shows meters used and "New applicant on this tapstand".
+
+## App updates (v6.0.5+)
+- Publish: web → **Settings → Mobile app release** (admin). Upload the signed `app-release.apk`; the version is read from the APK.
+  Add "What's new", optionally tick **Required update**. Needs migration `0011_app_releases.sql`.
+- Phones check when the app is opened (at most every 15 min) or via **Settings → Check for updates**,
+  download the APK inside the app and open Android's installer. First time only: allow "Install unknown apps" for TapTrack.
+- Optional updates become required after the grace period (web setting). Maintenance mode blocks the app with a message.
+- Always raise `versionCode` before building a release; phones only update to a higher code, signed with the same key.

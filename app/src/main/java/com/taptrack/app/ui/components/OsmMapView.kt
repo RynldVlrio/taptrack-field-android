@@ -23,11 +23,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.taptrack.app.ui.screens.map.BoundaryOverlay
-import com.taptrack.app.utils.createBoundaryLabelBitmap
 import com.taptrack.app.utils.createLocationDotBitmap
 import com.taptrack.app.utils.createSearchPinBitmap
 import com.taptrack.app.utils.createTapMarkerBitmap
 import com.taptrack.app.utils.statusPinDrawable
+import com.taptrack.app.utils.layerLabelDrawable
 import com.taptrack.app.utils.getLastKnownLocation
 import com.taptrack.app.utils.tileSourceFor
 import org.osmdroid.events.MapEventsReceiver
@@ -181,7 +181,7 @@ fun OsmMapView(
                     val centroid = computeFeatureCentroid(feature.rings) ?: continue
                     val marker = Marker(mapView).apply {
                         position = centroid
-                        icon = createBoundaryLabelBitmap(context, label, overlay.borderColor)
+                        icon = layerLabelDrawable(context, label)
                         title = label
                         setAnchor(0.5f, 0.5f)
                     }

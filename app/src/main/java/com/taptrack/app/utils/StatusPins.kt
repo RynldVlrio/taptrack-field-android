@@ -105,3 +105,22 @@ private fun drawGlyph(c: Canvas, status: String, g: Path, glyphColor: Int) {
         strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
     })
 }
+
+/** Shared-layer label like the web: small dark bold text with a white outline, no box. */
+fun layerLabelDrawable(context: Context, text: String): BitmapDrawable {
+    val d = context.resources.displayMetrics.density
+    val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF0F172A.toInt(); textSize = 11f * d; typeface = android.graphics.Typeface.create(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.BOLD)
+    }
+    val halo = Paint(fill).apply { color = WHITE; style = Paint.Style.STROKE; strokeWidth = 3f * d; strokeJoin = Paint.Join.ROUND }
+    val pad = 3f * d
+    val w = (fill.measureText(text) + pad * 2).toInt().coerceAtLeast(1)
+    val fm = fill.fontMetrics
+    val h = (fm.descent - fm.ascent + pad * 2).toInt().coerceAtLeast(1)
+    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val y = pad - fm.ascent
+    c.drawText(text, pad, y, halo)
+    c.drawText(text, pad, y, fill)
+    return BitmapDrawable(context.resources, bmp)
+}

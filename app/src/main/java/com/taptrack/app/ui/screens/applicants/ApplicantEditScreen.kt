@@ -252,7 +252,7 @@ fun ApplicantEditScreen(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Field(contactNo, { contactNo = it }, "Contact no.", editable, Modifier.weight(1f), type = KeyboardType.Phone)
-                Field(household, { household = it.filter(Char::isDigit) }, "Household size", editable, Modifier.weight(0.7f), type = KeyboardType.Number)
+                Field(household, { household = it.filter(Char::isDigit) }, "Household", editable, Modifier.weight(0.7f), type = KeyboardType.Number)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ExposedDropdownMenuBox(expanded = typeMenu && editable, onExpandedChange = { typeMenu = it }, modifier = Modifier.weight(1f)) {

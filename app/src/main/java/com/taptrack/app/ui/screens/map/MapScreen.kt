@@ -97,7 +97,7 @@ fun MapScreen(
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
     var showDownload by remember { mutableStateOf(false) }
     var showLayers by remember { mutableStateOf(false) }
-    var showLegend by remember { mutableStateOf(true) }
+    var showLegend by remember { mutableStateOf(false) }
     var route by remember { mutableStateOf<RouteResult?>(null) }
     var routeLoading by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<TapstandEntity?>(null) }
