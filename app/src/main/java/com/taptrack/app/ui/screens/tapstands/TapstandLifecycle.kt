@@ -32,7 +32,8 @@ const val RELOCATE_LIMIT_M = 50.0
 val RETIRED = setOf("inactive", "decommissioned")
 
 private data class TsEvent(val kind: String, val from: String?, val to: String?, val dist: Double?, val reason: String?,
-                           val related: String?, val by: String?, val at: String)
+                           val related: String?, val by: String?, val at: String,
+                           val fromCode: String? = null, val toCode: String? = null)
 private data class TsRequest(val id: String, val kind: String, val reason: String, val dist: Double?, val status: String,
                              val requestedBy: String?, val by: String?, val at: String, val note: String?)
 
@@ -86,7 +87,7 @@ fun TapstandLifecycleSection(
             events = container.api.select("tapstand_events?tapstand_id=eq.${ts.id}&select=*,profiles(full_name)&order=created_at.desc").mapObj { o ->
                 TsEvent(o.getString("kind"), o.optStringOrNull("from_status"), o.optStringOrNull("to_status"), o.optDoubleOrNull("distance_m"),
                     o.optStringOrNull("reason"), o.optStringOrNull("related_id"), o.optJSONObject("profiles")?.optStringOrNull("full_name"),
-                    o.getString("created_at"))
+                    o.getString("created_at"), o.optStringOrNull("from_code"), o.optStringOrNull("to_code"))
             }
             requests = container.api.select("tapstand_requests?tapstand_id=eq.${ts.id}&select=*,requester:profiles!tapstand_requests_requested_by_fkey(full_name)&order=requested_at.desc&limit=10").mapObj { o ->
                 TsRequest(o.getString("id"), o.getString("kind"), o.getString("reason"), o.optDoubleOrNull("distance_m"), o.getString("status"),
@@ -293,6 +294,10 @@ private fun eventText(e: TsEvent, codeOf: (String?) -> String): String {
         "reinstated" -> "Reinstated → ${st(e.to)}"
         "replaced" -> "Replaced by ${codeOf(e.related)} — new spot $m from the original"
         "replaces" -> "Replaces ${codeOf(e.related)} ($m away)"
+        "corrected" -> "Location corrected by Admin ($m, code kept)"
+        "code_changed" -> "Code changed ${e.fromCode} → ${e.toCode}"
+        "unverified" -> "Verification undone — back to proposed (code ${e.fromCode} freed)"
+        "deleted" -> "Deleted"
         else -> "Status ${st(e.from)} → ${st(e.to)}"
     }
 }
