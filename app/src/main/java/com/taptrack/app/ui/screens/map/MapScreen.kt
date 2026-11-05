@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -196,37 +197,7 @@ fun MapScreen(
         if (routeLoading) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
 
         if (showLegend) {
-            Card(Modifier.align(Alignment.BottomStart).padding(12.dp).widthIn(max = 260.dp)) {
-                Column(Modifier.heightIn(max = 440.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Legend", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
-                    TsStatus.all.filter { it.key != "cancelled" }.forEach { s ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            StatusBadge(s.key)
-                            Spacer(Modifier.width(6.dp))
-                            Text(s.label, style = MaterialTheme.typography.labelSmall)
-                            if (s.key == "proposed") Text(" — to verify, not counted", style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    // shared layers (pipe routes, boundaries…): what each colour means
-                    boundaryOverlays.forEach { o ->
-                        val rows = o.legend.ifEmpty {
-                            listOf(com.taptrack.app.utils.LegendRow(o.borderColor, o.name, if (o.polylines.isNotEmpty()) "line" else "area"))
-                        }
-                        if (!(rows.size == 1 && rows[0].label == o.name)) {
-                            Text(o.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
-                        } else Spacer(Modifier.height(2.dp))
-                        rows.forEach { r ->
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                LayerSwatch(r, o.weight)
-                                Spacer(Modifier.width(6.dp))
-                                Text(r.label, style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-                }
-            }
+            MapLegend(boundaryOverlays, prefs, Modifier.align(Alignment.BottomStart).padding(12.dp))
         }
 
         Column(
@@ -414,6 +385,82 @@ private fun LayerSwatch(r: com.taptrack.app.utils.LegendRow, weight: Float) {
             "area" -> Box(Modifier.size(12.dp).border(2.dp, c, RoundedCornerShape(2.dp)).background(c.copy(alpha = 0.15f), RoundedCornerShape(2.dp)))
             "point" -> Box(Modifier.size(9.dp).background(Color.White, CircleShape).padding(1.5.dp).background(c, CircleShape))
             else -> Box(Modifier.width(16.dp).height((1f + weight * 0.5f).coerceIn(2f, 4f).dp).background(c, RoundedCornerShape(2.dp)))
+        }
+    }
+}
+
+/**
+ * Compact legend: "Tapstands" / "Layers" tabs, statuses in two columns, small text,
+ * max ~1/3 of the screen (scrolls inside), layers foldable (remembered on this phone).
+ */
+@Composable
+private fun MapLegend(overlays: List<BoundaryOverlay>, prefs: android.content.SharedPreferences, modifier: Modifier = Modifier) {
+    val small = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 13.sp)
+    var tab by remember { mutableStateOf(if (overlays.isNotEmpty()) prefs.getString("legend_tab", "ts") ?: "ts" else "ts") }
+    var folded by remember { mutableStateOf(prefs.getStringSet("legend_folded", emptySet())!!.toSet()) }
+    val maxH = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp / 3).dp
+    val shownTab = if (overlays.isEmpty()) "ts" else tab
+
+    Card(modifier.widthIn(max = 250.dp)) {
+        Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            // ── tabs ──
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                listOf("ts" to "Tapstands", "layers" to "Layers").forEach { (k, label) ->
+                    if (k == "layers" && overlays.isEmpty()) return@forEach
+                    val on = shownTab == k
+                    Text(label, style = small, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (on) Web.Teal700 else Web.Slate500,
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(if (on) Web.Teal50 else Color.Transparent)
+                            .clickable { tab = k; prefs.edit().putString("legend_tab", k).apply() }.padding(horizontal = 8.dp, vertical = 4.dp))
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Column(Modifier.heightIn(max = maxH).verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                if (shownTab == "ts") {
+                    TsStatus.all.filter { it.key != "cancelled" }.chunked(2).forEach { pair ->
+                        Row(Modifier.width(234.dp)) {
+                            pair.forEach { s ->
+                                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                    StatusBadge(s.key, 13f)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(s.label + if (s.key == "proposed") "*" else "", style = small, maxLines = 1)
+                                }
+                            }
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                    Text("* Proposed = to verify, not counted", style = small.copy(fontSize = 10.sp), color = Web.Slate500)
+                } else {
+                    overlays.forEach { o ->
+                        val rows = o.legend.ifEmpty {
+                            listOf(com.taptrack.app.utils.LegendRow(o.borderColor, o.name, if (o.polylines.isNotEmpty()) "line" else "area"))
+                        }
+                        val key = o.name
+                        val isFolded = key in folded
+                        if (rows.size == 1 && rows[0].label == o.name) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                LayerSwatch(rows[0], o.weight); Spacer(Modifier.width(5.dp)); Text(rows[0].label, style = small)
+                            }
+                        } else {
+                            Row(Modifier.fillMaxWidth().clickable {
+                                folded = if (isFolded) folded - key else folded + key
+                                prefs.edit().putStringSet("legend_folded", folded).apply()
+                            }.padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(if (isFolded) "▸" else "▾", style = small, color = Web.Slate500)
+                                Spacer(Modifier.width(3.dp))
+                                Text(o.name + (o.legendTitle?.let { " · $it" } ?: ""), style = small, fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            }
+                            if (!isFolded) rows.forEach { r ->
+                                Row(Modifier.padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    LayerSwatch(r, o.weight); Spacer(Modifier.width(5.dp)); Text(r.label, style = small)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

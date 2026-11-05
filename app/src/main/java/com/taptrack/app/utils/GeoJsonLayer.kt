@@ -34,7 +34,8 @@ object GeoJsonLayer {
                 LegendRow(c, o.optString("label", ""), o.optString("kind", "line"))
             }
         } ?: emptyList()
-        return ParsedBoundary(layerName, polygons, lines, points, legend)
+        val title = root.optString("legendTitle", "").takeIf { it.isNotBlank() && it != "null" }
+        return ParsedBoundary(layerName, polygons, lines, points, legend, title)
     }
 
     private fun parseColor(s: String): Int? =

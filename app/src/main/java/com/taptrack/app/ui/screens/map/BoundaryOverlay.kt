@@ -14,4 +14,5 @@ data class BoundaryOverlay(
     val points: List<NamedFeature> = emptyList(),
     val weight: Float = 2f,          // line thickness chosen on the web (2 thin · 4 medium · 6 thick)
     val legend: List<LegendRow> = emptyList(),
+    val legendTitle: String? = null,
 )
