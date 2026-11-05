@@ -27,7 +27,14 @@ object GeoJsonLayer {
             val color = props?.optString("color", "")?.let { parseColor(it) }
             addGeometry(f.optJSONObject("geometry") ?: continue, name, color, polygons, lines, points)
         }
-        return ParsedBoundary(layerName, polygons, lines, points)
+        val legend = root.optJSONArray("legend")?.let { arr ->
+            (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                val c = parseColor(o.optString("color")) ?: return@mapNotNull null
+                LegendRow(c, o.optString("label", ""), o.optString("kind", "line"))
+            }
+        } ?: emptyList()
+        return ParsedBoundary(layerName, polygons, lines, points, legend)
     }
 
     private fun parseColor(s: String): Int? =

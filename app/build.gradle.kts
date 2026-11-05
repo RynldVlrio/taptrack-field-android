@@ -26,8 +26,8 @@ android {
         applicationId = "com.taptrack.field"
         minSdk = 26
         targetSdk = 34
-        versionCode = 71
-        versionName = "6.0.11"
+        versionCode = 72
+        versionName = "6.0.12"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Publishable key is designed to be public; data is protected by Row Level Security.

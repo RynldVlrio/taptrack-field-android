@@ -23,7 +23,11 @@ data class ParsedBoundary(
     val polygons: List<NamedFeature>,
     val polylines: List<NamedFeature>,
     val points: List<NamedFeature> = emptyList(),   // valves, blow-offs… (one point per feature)
+    val legend: List<LegendRow> = emptyList(),       // written by the web: what each colour means
 )
+
+/** One legend row of a shared layer. kind = "line" | "area" | "point". */
+data class LegendRow(val color: Int, val label: String, val kind: String)
 
 object BoundaryParser {
 

@@ -63,7 +63,7 @@ class MapViewModel(private val c: AppContainer) : ViewModel() {
                     BoundaryOverlay(
                         id = l.id.hashCode().toLong(), name = l.name,
                         fillColor = l.fillColor, borderColor = l.strokeColor, showLabel = l.showLabel,
-                        polygons = p.polygons, polylines = p.polylines, points = p.points, weight = l.weight,
+                        polygons = p.polygons, polylines = p.polylines, points = p.points, weight = l.weight, legend = p.legend,
                     )
                 }
             }

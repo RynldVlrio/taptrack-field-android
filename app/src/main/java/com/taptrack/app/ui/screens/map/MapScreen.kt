@@ -14,6 +14,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -195,8 +196,9 @@ fun MapScreen(
         if (routeLoading) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
 
         if (showLegend) {
-            Card(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
-                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Card(Modifier.align(Alignment.BottomStart).padding(12.dp).widthIn(max = 260.dp)) {
+                Column(Modifier.heightIn(max = 440.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Legend", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
                     TsStatus.all.filter { it.key != "cancelled" }.forEach { s ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -205,6 +207,22 @@ fun MapScreen(
                             Text(s.label, style = MaterialTheme.typography.labelSmall)
                             if (s.key == "proposed") Text(" — to verify, not counted", style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    // shared layers (pipe routes, boundaries…): what each colour means
+                    boundaryOverlays.forEach { o ->
+                        val rows = o.legend.ifEmpty {
+                            listOf(com.taptrack.app.utils.LegendRow(o.borderColor, o.name, if (o.polylines.isNotEmpty()) "line" else "area"))
+                        }
+                        if (!(rows.size == 1 && rows[0].label == o.name)) {
+                            Text(o.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                        } else Spacer(Modifier.height(2.dp))
+                        rows.forEach { r ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                LayerSwatch(r, o.weight)
+                                Spacer(Modifier.width(6.dp))
+                                Text(r.label, style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }
@@ -383,6 +401,19 @@ private fun MapCompass(azimuth: Float, onResetNorth: () -> Unit) {
             }
             Text("N", color = Color.White, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 1.dp))
+        }
+    }
+}
+
+/** Legend swatch for a layer row: a line, an outlined square or a dot. */
+@Composable
+private fun LayerSwatch(r: com.taptrack.app.utils.LegendRow, weight: Float) {
+    val c = Color(r.color)
+    Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
+        when (r.kind) {
+            "area" -> Box(Modifier.size(12.dp).border(2.dp, c, RoundedCornerShape(2.dp)).background(c.copy(alpha = 0.15f), RoundedCornerShape(2.dp)))
+            "point" -> Box(Modifier.size(9.dp).background(Color.White, CircleShape).padding(1.5.dp).background(c, CircleShape))
+            else -> Box(Modifier.width(16.dp).height((1f + weight * 0.5f).coerceIn(2f, 4f).dp).background(c, RoundedCornerShape(2.dp)))
         }
     }
 }
