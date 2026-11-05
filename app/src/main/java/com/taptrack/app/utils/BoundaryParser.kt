@@ -14,13 +14,15 @@ import java.util.zip.ZipInputStream
  */
 data class NamedFeature(
     val name: String,
-    val rings: List<List<GeoPoint>>
+    val rings: List<List<GeoPoint>>,
+    val color: Int? = null,          // per-shape colour set on the web (colour by column / file colours)
 )
 
 data class ParsedBoundary(
     val name: String,
     val polygons: List<NamedFeature>,
-    val polylines: List<NamedFeature>
+    val polylines: List<NamedFeature>,
+    val points: List<NamedFeature> = emptyList(),   // valves, blow-offs… (one point per feature)
 )
 
 object BoundaryParser {

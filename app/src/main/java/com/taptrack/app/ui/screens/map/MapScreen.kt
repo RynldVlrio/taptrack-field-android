@@ -215,6 +215,9 @@ fun MapScreen(
             Modifier.align(Alignment.BottomEnd).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.End,
         ) {
+            MapControl(Icons.Default.Add, "Zoom in") { mapViewRef?.controller?.zoomIn() }
+            MapControl(Icons.Default.Remove, "Zoom out") { mapViewRef?.controller?.zoomOut() }
+            Spacer(Modifier.height(4.dp))
             MapControl(Icons.Default.Info, "Legend", active = showLegend) { showLegend = !showLegend }
             MapControl(Icons.Default.People, if (showApplicants) "Hide applicants" else "Show applicants", active = showApplicants) {
                 showApplicants = !showApplicants; prefs.edit().putBoolean("applicants", showApplicants).apply()

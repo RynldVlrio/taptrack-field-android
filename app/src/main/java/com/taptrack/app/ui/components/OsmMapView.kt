@@ -85,6 +85,8 @@ fun OsmMapView(
         MapView(context).apply {
             setTileSource(tileSourceFor(satellite))
             setMultiTouchControls(true)
+            // built-in +/- buttons pass long-presses to the map ("Selected point"); the screen draws its own
+            zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
             setMaxZoomLevel(21.0)
             controller.setZoom(zoom)
             controller.setCenter(GeoPoint(initialLat, initialLng))
@@ -142,16 +144,22 @@ fun OsmMapView(
         activeBoundaryOverlays.forEach { mapView.overlays.remove(it) }
         activeBoundaryOverlays.clear()
         val density = context.resources.displayMetrics.density
+        val toast = { text: String -> android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show() }
         for (overlay in boundaryOverlays) {
+            val lineWidth = (1.2f + overlay.weight * 0.9f) * density          // thin 3 · medium 4.8 · thick 6.6 dp
+            val fillAlpha = (overlay.fillColor ushr 24) and 0xFF
             for (feature in overlay.polygons) {
+                val stroke = feature.color ?: overlay.borderColor
+                val fill = feature.color?.let { (fillAlpha shl 24) or (it and 0x00FFFFFF) } ?: overlay.fillColor
                 for (ring in feature.rings) {
                     val poly = OsmPolygon().apply {
                         points = ring.toMutableList()
-                        fillPaint.color = overlay.fillColor
+                        fillPaint.color = fill
                         fillPaint.style = android.graphics.Paint.Style.FILL
-                        outlinePaint.color = overlay.borderColor
-                        outlinePaint.strokeWidth = 2.5f * density
+                        outlinePaint.color = stroke
+                        outlinePaint.strokeWidth = minOf(2.5f, 1f + overlay.weight * 0.6f) * density
                         outlinePaint.style = android.graphics.Paint.Style.STROKE
+                        setOnClickListener { _, _, _ -> false }                // taps go through to the map
                     }
                     mapView.overlays.add(0, poly)
                     activeBoundaryOverlays.add(poly)
@@ -161,29 +169,41 @@ fun OsmMapView(
                 for (pts in feature.rings) {
                     val polyline = Polyline().apply {
                         setPoints(pts)
-                        outlinePaint.color = overlay.borderColor
-                        outlinePaint.strokeWidth = 3.5f * density
+                        outlinePaint.color = feature.color ?: overlay.borderColor
+                        outlinePaint.strokeWidth = lineWidth
                         outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
                         outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
                         outlinePaint.isAntiAlias = true
+                        val what = listOf(feature.name, overlay.name).filter { it.isNotBlank() }.distinct().joinToString(" · ")
+                        setOnClickListener { _, _, _ -> toast(what); true }       // tap a pipe → its name
                     }
                     mapView.overlays.add(0, polyline)
                     activeBoundaryOverlays.add(polyline)
                 }
             }
+            for (feature in overlay.points) {
+                val p = feature.rings.firstOrNull()?.firstOrNull() ?: continue
+                val marker = Marker(mapView).apply {
+                    position = p
+                    icon = layerDotDrawable(context, feature.color ?: overlay.borderColor, (5f + overlay.weight * 0.5f) * density)
+                    setAnchor(0.5f, 0.5f)
+                    val what = listOf(feature.name, overlay.name).filter { it.isNotBlank() }.distinct().joinToString(" · ")
+                    setOnMarkerClickListener { _, _ -> toast(what); true }
+                }
+                mapView.overlays.add(marker)
+                activeBoundaryOverlays.add(marker)
+            }
             if (overlay.showLabel) {
-                for (feature in overlay.polygons + overlay.polylines) {
-                    val label = feature.name.ifBlank { if (feature in overlay.polygons) overlay.name else "" }
-                    if (label.isBlank()) continue
+                // areas: one label in the middle of each shape
+                for (feature in overlay.polygons) {
+                    val label = feature.name.ifBlank { overlay.name }
                     val centroid = computeFeatureCentroid(feature.rings) ?: continue
-                    val marker = Marker(mapView).apply {
-                        position = centroid
-                        icon = layerLabelDrawable(context, label)
-                        title = label
-                        setAnchor(0.5f, 0.5f)
-                    }
-                    mapView.overlays.add(marker)
-                    activeBoundaryOverlays.add(marker)
+                    addLayerLabel(mapView, context, label, centroid, activeBoundaryOverlays)
+                }
+                // lines: ONE label per name, half-way along its longest piece (a pipe split into 200 segments → 1 label)
+                overlay.polylines.filter { it.name.isNotBlank() }.groupBy { it.name }.forEach { (name, feats) ->
+                    val longest = feats.flatMap { it.rings }.maxByOrNull { lineLength(it) } ?: return@forEach
+                    addLayerLabel(mapView, context, name, pointAlong(longest, 0.5), activeBoundaryOverlays)
                 }
             }
         }
@@ -313,6 +333,48 @@ private fun createDotBitmap(context: android.content.Context, color: Int): Bitma
     return BitmapDrawable(context.resources, bmp)
 }
 
+private fun addLayerLabel(mapView: MapView, context: android.content.Context, label: String, at: GeoPoint,
+                          into: MutableList<org.osmdroid.views.overlay.Overlay>) {
+    if (label.isBlank()) return
+    val marker = Marker(mapView).apply {
+        position = at
+        icon = layerLabelDrawable(context, label)
+        title = label
+        setAnchor(0.5f, 0.5f)
+        setOnMarkerClickListener { _, _ -> false }
+    }
+    mapView.overlays.add(marker)
+    into.add(marker)
+}
+
+private fun lineLength(pts: List<GeoPoint>): Double = pts.zipWithNext { a, b -> a.distanceToAsDouble(b) }.sum()
+
+/** Point at a fraction (0..1) of the way along a line. */
+private fun pointAlong(pts: List<GeoPoint>, fraction: Double): GeoPoint {
+    val target = lineLength(pts) * fraction
+    var run = 0.0
+    for ((a, b) in pts.zipWithNext()) {
+        val d = a.distanceToAsDouble(b)
+        if (run + d >= target && d > 0) {
+            val t = (target - run) / d
+            return GeoPoint(a.latitude + (b.latitude - a.latitude) * t, a.longitude + (b.longitude - a.longitude) * t)
+        }
+        run += d
+    }
+    return pts.last()
+}
+
+/** Small round dot with a white rim (valves, blow-offs… from a layer). */
+private fun layerDotDrawable(context: android.content.Context, color: Int, sizePx: Float): android.graphics.drawable.BitmapDrawable {
+    val n = sizePx.toInt().coerceAtLeast(6) * 2
+    val bmp = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
+    val c = android.graphics.Canvas(bmp)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    paint.color = android.graphics.Color.WHITE; c.drawCircle(n / 2f, n / 2f, n / 2f, paint)
+    paint.color = color; c.drawCircle(n / 2f, n / 2f, n / 2f - n / 7f, paint)
+    return android.graphics.drawable.BitmapDrawable(context.resources, bmp)
+}
+
 private fun computeFeatureCentroid(rings: List<List<GeoPoint>>): GeoPoint? {
     val all = rings.flatten().ifEmpty { return null }
     return GeoPoint(all.sumOf { it.latitude } / all.size, all.sumOf { it.longitude } / all.size)
@@ -335,6 +397,8 @@ fun CenterPinMapView(
         MapView(context).apply {
             setTileSource(tileSourceFor(satellite))
             setMultiTouchControls(true)
+            // built-in +/- buttons pass long-presses to the map ("Selected point"); the screen draws its own
+            zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
             setMaxZoomLevel(21.0)
             controller.setZoom(18.0)
             controller.setCenter(GeoPoint(lat, lng))
