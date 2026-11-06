@@ -145,7 +145,10 @@ fun OsmMapView(
         activeBoundaryOverlays.clear()
         val density = context.resources.displayMetrics.density
         val toast = { text: String -> android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show() }
-        for (overlay in boundaryOverlays) {
+        // list order from the web: first = on top. Draw bottom layer first, each one above the previous,
+        // all still under the tapstand pins.
+        var at = 0
+        for (overlay in boundaryOverlays.asReversed()) {
             val lineWidth = (1.2f + overlay.weight * 0.9f) * density          // thin 3 · medium 4.8 · thick 6.6 dp
             val fillAlpha = (overlay.fillColor ushr 24) and 0xFF
             for (feature in overlay.polygons) {
@@ -161,7 +164,7 @@ fun OsmMapView(
                         outlinePaint.style = android.graphics.Paint.Style.STROKE
                         setOnClickListener { _, _, _ -> false }                // taps go through to the map
                     }
-                    mapView.overlays.add(0, poly)
+                    mapView.overlays.add(at++, poly)
                     activeBoundaryOverlays.add(poly)
                 }
             }
@@ -177,7 +180,7 @@ fun OsmMapView(
                         val what = listOf(feature.name, overlay.name).filter { it.isNotBlank() }.distinct().joinToString(" · ")
                         setOnClickListener { _, _, _ -> toast(what); true }       // tap a pipe → its name
                     }
-                    mapView.overlays.add(0, polyline)
+                    mapView.overlays.add(at++, polyline)
                     activeBoundaryOverlays.add(polyline)
                 }
             }
@@ -190,7 +193,7 @@ fun OsmMapView(
                     val what = listOf(feature.name, overlay.name).filter { it.isNotBlank() }.distinct().joinToString(" · ")
                     setOnMarkerClickListener { _, _ -> toast(what); true }
                 }
-                mapView.overlays.add(marker)
+                mapView.overlays.add(at++, marker)
                 activeBoundaryOverlays.add(marker)
             }
             if (overlay.showLabel) {

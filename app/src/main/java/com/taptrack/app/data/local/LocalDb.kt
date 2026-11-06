@@ -129,6 +129,8 @@ data class MapLayerEntity(
     val localFile: String? = null,   // downloaded GeoJSON on this phone
     val localVersion: String? = null, // updatedAt of the downloaded copy
     val userVisible: Boolean? = null, // this phone's on/off choice (null = layer default)
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val sortOrder: Int = 0,           // order set on the web: lower = drawn on top
 )
 
 /** Shown on this phone? (its own on/off choice, else the office default) */
@@ -214,7 +216,7 @@ interface PhotoDao {
 
 @Dao
 interface MapLayerDao {
-    @Query("SELECT * FROM map_layers WHERE projectId = :projectId AND deleted = 0 ORDER BY name")
+    @Query("SELECT * FROM map_layers WHERE projectId = :projectId AND deleted = 0 ORDER BY sortOrder, name")
     fun observe(projectId: String): Flow<List<MapLayerEntity>>
 
     @Query("SELECT * FROM map_layers")
@@ -248,7 +250,7 @@ interface SyncMetaDao {
         BarangayEntity::class, TapstandEntity::class, ApplicantEntity::class,
         PhotoEntity::class, SyncMetaEntity::class, BoundaryEntity::class, MapLayerEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class LocalDb : RoomDatabase() {
@@ -291,9 +293,17 @@ abstract class LocalDb : RoomDatabase() {
             }
         }
 
+        /** v2 → v3: layer order from the web; re-pull layers so every row gets its order. */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `map_layers` ADD COLUMN `sortOrder` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("DELETE FROM sync_meta WHERE `key` = 'v_map_layers'")
+            }
+        }
+
         fun create(context: Context): LocalDb =
             Room.databaseBuilder(context.applicationContext, LocalDb::class.java, "taptrack_v6.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .fallbackToDestructiveMigration()
                 .build()
     }

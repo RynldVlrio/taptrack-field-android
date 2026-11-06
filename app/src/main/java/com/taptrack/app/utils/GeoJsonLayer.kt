@@ -23,6 +23,7 @@ object GeoJsonLayer {
         for (i in 0 until features.length()) {
             val f = features.optJSONObject(i) ?: continue
             val props = f.optJSONObject("properties")
+            if (props?.optBoolean("hidden", false) == true) continue      // hidden on the maps (web legend editor)
             val name = props?.optString("name", "") ?: ""
             val color = props?.optString("color", "")?.let { parseColor(it) }
             addGeometry(f.optJSONObject("geometry") ?: continue, name, color, polygons, lines, points)
@@ -30,6 +31,7 @@ object GeoJsonLayer {
         val legend = root.optJSONArray("legend")?.let { arr ->
             (0 until arr.length()).mapNotNull { i ->
                 val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                if (!o.optBoolean("inLegend", true) || !o.optBoolean("onMap", true)) return@mapNotNull null
                 val c = parseColor(o.optString("color")) ?: return@mapNotNull null
                 LegendRow(c, o.optString("label", ""), o.optString("kind", "line"))
             }

@@ -218,7 +218,7 @@ class SyncManager(
     }
 
     companion object {
-        const val MAP_LAYER_COLS = "id,project_id,name,storage_path,file_type,style,is_visible,updated_at,deleted_at,sync_version"
+        const val MAP_LAYER_COLS = "id,project_id,name,storage_path,file_type,style,is_visible,sort_order,updated_at,deleted_at,sync_version"
         const val TAPSTAND_COLS = "id,project_id,code,barangay_id,sitio,location_desc,lat,lng,status,max_connections," +
             "installed_on,remarks,is_draft,draft_label,planned_lat,planned_lng,plan_source,deleted_at,sync_version"
         const val APPLICANT_COLS = "id,project_id,application_no,last_name,first_name,middle_name,suffix,contact_no," +
@@ -347,5 +347,6 @@ fun mapLayerFromServer(o: JSONObject): MapLayerEntity {
         deleted = !o.isNull("deleted_at"),
         syncVersion = o.optLong("sync_version", 0),
         updatedAt = o.optString("updated_at", ""),
+        sortOrder = o.optInt("sort_order", 0),
     )
 }
