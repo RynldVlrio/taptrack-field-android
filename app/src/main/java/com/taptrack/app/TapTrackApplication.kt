@@ -37,6 +37,11 @@ class AppContainer(app: Application) {
     val boundaryRepository = BoundaryRepository(db.boundaryDao())
     val updater = com.taptrack.app.utils.AppUpdater(app, api, scope)
 
+    init {
+        // As-Built surveys saved on this phone upload with every sync (offline queue, never twice)
+        sync.extraUploads = { com.taptrack.app.utils.KmlExporter.uploadPending(app, this) }
+    }
+
     /** Extra steps between "signed in" and "using the app" (shown instead of the login screen). */
     sealed class Onboarding {
         data class NeedsPassword(val email: String) : Onboarding()

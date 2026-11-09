@@ -54,6 +54,9 @@ class SyncManager(
     val state: StateFlow<SyncState> = _state.asStateFlow()
     private val mutex = Mutex()
 
+    /** Extra uploads run with every sync (set by the app: As-Built surveys saved while offline). */
+    var extraUploads: (suspend () -> Unit)? = null
+
     fun startAutoSync() {
         scope.launch {
             while (isActive) {
@@ -73,6 +76,7 @@ class SyncManager(
             pushPhotos(projectId)          // photos of records already on the server first (Installed needs its photo there)
             val refused = pushTapstands() + pushApplicants()
             pushPhotos(projectId)          // then photos of records just created
+            extraUploads?.let { up -> try { up() } catch (e: ApiException) { /* retried next sync */ } }
             pullBarangays(projectId)
             pullTapstands(projectId)
             pullApplicants(projectId)

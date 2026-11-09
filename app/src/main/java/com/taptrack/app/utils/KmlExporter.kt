@@ -6,6 +6,7 @@ import android.os.Environment
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.FileProvider
 import com.taptrack.app.AppContainer
+import com.taptrack.app.data.remote.ApiException
 import com.taptrack.app.data.remote.putNullable
 import org.json.JSONArray
 import org.json.JSONObject
@@ -42,6 +43,58 @@ data class PipeDiameter(
 val STANDARD_PIPE_DIAMETERS = PipeDiameter.ALL
 
 object KmlExporter {
+
+    /** Returned (as the Result value) when the file was already on the server — nothing was sent again. */
+    const val ALREADY_UPLOADED = "already_uploaded"
+
+    /** Same file → same row id, so a repeated upload can never create a second row. */
+    private fun rowId(storagePath: String): String = java.util.UUID.nameUUIDFromBytes(storagePath.toByteArray()).toString()
+
+    private suspend fun isOnServer(container: AppContainer, storagePath: String): Boolean {
+        val enc = java.net.URLEncoder.encode(storagePath, "UTF-8")
+        return container.api.select("as_built_pipelines?select=id&storage_path=eq.$enc&limit=1").length() > 0
+    }
+
+    /** Upload file + row once. Skips files already on the server; a duplicate row (409) counts as done. */
+    private suspend fun sendOnce(container: AppContainer, file: File, storagePath: String, row: JSONObject): String {
+        if (isOnServer(container, storagePath)) return ALREADY_UPLOADED
+        container.api.uploadFile(bucket = "media", path = storagePath, file = file,
+            contentType = "application/vnd.google-earth.kml+xml")
+        row.put("id", rowId(storagePath))
+        return try {
+            container.api.insert("as_built_pipelines", row).optString("id", file.name)
+        } catch (e: ApiException) {
+            if (e.code == 409) ALREADY_UPLOADED else throw e
+        }
+    }
+
+    /**
+     * Offline queue: upload every saved survey on this phone that the server doesn't have yet.
+     * Runs with each sync. Stops quietly when offline (next sync tries again).
+     */
+    suspend fun uploadPending(context: Context, container: AppContainer): Int {
+        val projectId = container.session.projectId ?: return 0
+        val dir = File(context.filesDir, "as_built_kml")
+        val files = dir.listFiles { f -> f.isFile && f.extension.equals("kml", ignoreCase = true) }?.toList().orEmpty()
+        if (files.isEmpty()) return 0
+        val onServer = HashSet<String>()
+        var offset = 0
+        while (true) {
+            val arr = container.api.select("as_built_pipelines?select=storage_path&project_id=eq.$projectId&order=id.asc&limit=1000&offset=$offset")
+            for (i in 0 until arr.length()) onServer += arr.getJSONObject(i).optString("storage_path")
+            if (arr.length() < 1000) break
+            offset += 1000
+        }
+        var sent = 0
+        for (f in files.sortedBy { it.lastModified() }) {
+            if ("$projectId/as_built/${f.name}" in onServer) continue
+            val r = uploadExistingFileToSupabase(container, f)
+            val err = r.exceptionOrNull()
+            if (err is java.io.IOException) break          // offline — try at the next sync
+            if (r.isSuccess && r.getOrNull() != ALREADY_UPLOADED) sent++
+        }
+        return sent
+    }
 
     private fun kmlColor(hex: String): String {
         val clean = hex.removePrefix("#")
@@ -135,15 +188,7 @@ object KmlExporter {
         val dateIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         val storagePath = "$projectId/as_built/${file.name}"
 
-        // 1. Upload KML file to Supabase storage 'media' bucket
-        container.api.uploadFile(
-            bucket = "media",
-            path = storagePath,
-            file = file,
-            contentType = "application/vnd.google-earth.kml+xml"
-        )
-
-        // 2. Build coordinates array
+        // Build coordinates array
         val coordsJson = JSONArray().apply {
             points.forEach { pt ->
                 put(
@@ -171,8 +216,7 @@ object KmlExporter {
             .put("survey_date", dateIso)
             .putNullable("surveyor_name", container.session.fullName.ifBlank { null })
 
-        val inserted = container.api.insert("as_built_pipelines", row)
-        inserted.optString("id", file.name)
+        sendOnce(container, file, storagePath, row)
     }
 
     /** Upload an existing KML file from disk to Supabase if parsed */
@@ -183,14 +227,7 @@ object KmlExporter {
         val projectId = container.session.projectId
             ?: throw IllegalStateException("No active project in session")
         val storagePath = "$projectId/as_built/${file.name}"
-
-        // Upload KML file to storage
-        container.api.uploadFile(
-            bucket = "media",
-            path = storagePath,
-            file = file,
-            contentType = "application/vnd.google-earth.kml+xml"
-        )
+        if (isOnServer(container, storagePath)) return@runCatching ALREADY_UPLOADED
 
         // Parse basic details from KML
         val content = file.readText()
@@ -235,8 +272,7 @@ object KmlExporter {
             .put("survey_date", dateIso)
             .putNullable("surveyor_name", container.session.fullName.ifBlank { null })
 
-        val inserted = container.api.insert("as_built_pipelines", row)
-        inserted.optString("id", file.name)
+        sendOnce(container, file, storagePath, row)
     }
 
     /** Copy any existing files in app private storage to public Downloads if missing */

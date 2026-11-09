@@ -532,13 +532,20 @@ fun AsBuiltScreen(
                                 distanceMeters = currentDist,
                                 file = file
                             )
-                            if (res.isSuccess) {
-                                uploadStatusMsg = "Synced to Supabase (as_built_pipelines)"
-                                Toast.makeText(context, "Saved & synced to Supabase!", Toast.LENGTH_LONG).show()
-                            } else {
-                                val err = res.exceptionOrNull()?.message ?: "Upload failed"
-                                uploadStatusMsg = "Saved in Downloads. Supabase sync: $err"
-                                Toast.makeText(context, "Saved locally. Supabase error: $err", Toast.LENGTH_LONG).show()
+                            val err = res.exceptionOrNull()
+                            when {
+                                res.isSuccess -> {
+                                    uploadStatusMsg = "Synced to Supabase (as_built_pipelines)"
+                                    Toast.makeText(context, "Saved & synced to Supabase!", Toast.LENGTH_LONG).show()
+                                }
+                                err is java.io.IOException -> {
+                                    uploadStatusMsg = "Saved on this phone — it uploads automatically when online"
+                                    Toast.makeText(context, "No signal — saved. It uploads automatically when online.", Toast.LENGTH_LONG).show()
+                                }
+                                else -> {
+                                    uploadStatusMsg = "Saved in Downloads. Supabase sync: ${err?.message ?: "Upload failed"} — retried at next sync"
+                                    Toast.makeText(context, "Saved locally. Supabase error: ${err?.message}", Toast.LENGTH_LONG).show()
+                                }
                             }
                         }
                     },
@@ -682,8 +689,12 @@ fun AsBuiltScreen(
                                             scope.launch {
                                                 Toast.makeText(context, "Syncing ${f.name} to Supabase...", Toast.LENGTH_SHORT).show()
                                                 val res = KmlExporter.uploadExistingFileToSupabase(container, f)
-                                                if (res.isSuccess) {
+                                                if (res.getOrNull() == KmlExporter.ALREADY_UPLOADED) {
+                                                    Toast.makeText(context, "Already uploaded — nothing sent again.", Toast.LENGTH_LONG).show()
+                                                } else if (res.isSuccess) {
                                                     Toast.makeText(context, "Uploaded to Supabase as_built_pipelines!", Toast.LENGTH_LONG).show()
+                                                } else if (res.exceptionOrNull() is java.io.IOException) {
+                                                    Toast.makeText(context, "No signal — it uploads automatically when online.", Toast.LENGTH_LONG).show()
                                                 } else {
                                                     Toast.makeText(context, "Upload failed: ${res.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
                                                 }
