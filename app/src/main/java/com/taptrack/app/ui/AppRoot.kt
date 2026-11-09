@@ -22,6 +22,8 @@ import androidx.navigation.navArgument
 import com.taptrack.app.AppContainer
 import com.taptrack.app.ui.screens.applicants.ApplicantEditScreen
 import com.taptrack.app.ui.screens.applicants.ApplicantListScreen
+import com.taptrack.app.ui.screens.leads.LeadDetailScreen
+import com.taptrack.app.ui.screens.leads.LeadListScreen
 import com.taptrack.app.ui.screens.login.AuthScreens
 import com.taptrack.app.ui.screens.login.LoginScreen
 import com.taptrack.app.ui.screens.login.OnboardingScreen
@@ -61,8 +63,8 @@ private fun MainShell(container: AppContainer) {
     val route = backStack?.destination?.route
     val showBar = tabs.any { it.route == route }
 
-    fun appRoute(id: String? = null, lat: Double? = null, lng: Double? = null, ts: String? = null) =
-        "applicant_edit?id=${id ?: ""}&lat=${lat ?: ""}&lng=${lng ?: ""}&ts=${ts ?: ""}"
+    fun appRoute(id: String? = null, lat: Double? = null, lng: Double? = null, ts: String? = null, lead: String? = null) =
+        "applicant_edit?id=${id ?: ""}&lat=${lat ?: ""}&lng=${lng ?: ""}&ts=${ts ?: ""}&lead=${lead ?: ""}"
 
     fun editRoute(id: String? = null, lat: Double? = null, lng: Double? = null) =
         "tapstand_edit?id=${id ?: ""}&lat=${lat ?: ""}&lng=${lng ?: ""}"
@@ -99,7 +101,8 @@ private fun MainShell(container: AppContainer) {
                         onOpenTapstand = { nav.navigate(editRoute(id = it)) },
                         onAddTapstand = { lat, lng -> nav.navigate(editRoute(lat = lat, lng = lng)) },
                         onOpenApplicant = { nav.navigate(appRoute(id = it)) },
-                        onAddApplicant = { lat, lng, ts -> nav.navigate(appRoute(lat = lat, lng = lng, ts = ts)) })
+                        onAddApplicant = { lat, lng, ts -> nav.navigate(appRoute(lat = lat, lng = lng, ts = ts)) },
+                        onOpenLead = { nav.navigate("lead/$it") })
                 }
                 composable("tapstands") {
                     TapstandListScreen(container, onOpen = { nav.navigate(editRoute(id = it)) }, onAdd = { nav.navigate(editRoute()) })
@@ -107,10 +110,22 @@ private fun MainShell(container: AppContainer) {
                 composable("applicants") {
                     ApplicantListScreen(container, onOpen = { nav.navigate(appRoute(id = it)) }, onAdd = { nav.navigate(appRoute()) })
                 }
-                composable("more") { MoreScreen(container) }
+                composable("more") { MoreScreen(container, onOpenLeads = { nav.navigate("leads") }) }
+                composable("leads") {
+                    LeadListScreen(container, onOpen = { nav.navigate("lead/$it") }, onBack = { nav.popBackStack() })
+                }
+                composable("lead/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+                    LeadDetailScreen(
+                        container = container,
+                        leadId = entry.arguments?.getString("id") ?: "",
+                        onBack = { nav.popBackStack() },
+                        onStartApplication = { nav.navigate(appRoute(lead = it)) },
+                        onOpenApplicant = { nav.navigate(appRoute(id = it)) },
+                    )
+                }
                 composable(
-                    "applicant_edit?id={id}&lat={lat}&lng={lng}&ts={ts}",
-                    arguments = listOf("id", "lat", "lng", "ts").map { n -> navArgument(n) { type = NavType.StringType; nullable = true; defaultValue = null } },
+                    "applicant_edit?id={id}&lat={lat}&lng={lng}&ts={ts}&lead={lead}",
+                    arguments = listOf("id", "lat", "lng", "ts", "lead").map { n -> navArgument(n) { type = NavType.StringType; nullable = true; defaultValue = null } },
                 ) { entry ->
                     val a = entry.arguments
                     ApplicantEditScreen(
@@ -119,6 +134,7 @@ private fun MainShell(container: AppContainer) {
                         initialLat = a?.getString("lat")?.toDoubleOrNull(),
                         initialLng = a?.getString("lng")?.toDoubleOrNull(),
                         initialTapstandId = a?.getString("ts")?.takeIf { it.isNotBlank() },
+                        initialLeadId = a?.getString("lead")?.takeIf { it.isNotBlank() },
                         onDone = { nav.popBackStack() },
                     )
                 }

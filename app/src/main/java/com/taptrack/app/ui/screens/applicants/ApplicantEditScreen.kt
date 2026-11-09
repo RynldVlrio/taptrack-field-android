@@ -74,6 +74,7 @@ fun ApplicantEditScreen(
     initialLat: Double?,
     initialLng: Double?,
     initialTapstandId: String?,
+    initialLeadId: String? = null,
     onDone: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -110,6 +111,8 @@ fun ApplicantEditScreen(
     var slot by remember { mutableStateOf<Int?>(null) }          // null = next free (server picks)
     var serial by remember { mutableStateOf("") }
     var remarks by remember { mutableStateOf("") }
+    var leadUuid by remember { mutableStateOf<String?>(null) }    // HH Survey lead this application came from
+    var leadName by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(applicantId) {
         if (applicantId != null) {
@@ -120,8 +123,35 @@ fun ApplicantEditScreen(
                 dateApplied = a.dateApplied.ifBlank { dateApplied }; barangayId = a.barangayId; sitio = a.sitio ?: ""; address = a.address ?: ""
                 latText = a.lat?.let { "%.6f".format(Locale.US, it) } ?: ""; lngText = a.lng?.let { "%.6f".format(Locale.US, it) } ?: ""
                 status = a.status; tsId = a.assignedTapstandId; slot = a.meterSlot; serial = a.meterSerial ?: ""; remarks = a.remarks ?: ""
+                leadUuid = a.sourceLeadUuid
+                leadName = a.sourceLeadUuid?.let { container.db.leads().getByUuid(it) }?.let { "${it.firstName} ${it.lastName}".trim() }
             }
             loaded = true
+        }
+    }
+    // New applicant from an HH Survey lead: copy name, contact, barangay, GPS (all still editable —
+    // the applicant may be another member of the same household).
+    LaunchedEffect(initialLeadId) {
+        if (isNew && initialLeadId != null) {
+            container.db.leads().get(initialLeadId)?.let { l ->
+                lastName = l.lastName.trim().uppercase(); firstName = l.firstName.trim().uppercase()
+                contactNo = l.contactNo?.trim() ?: ""
+                val bId = l.barangayId ?: l.barangayName?.trim()?.let { n -> barangays.firstOrNull { it.name.equals(n, ignoreCase = true) }?.id }
+                if (bId != null) barangayId = bId
+                if (l.lat != null && l.lng != null) {
+                    latText = "%.6f".format(Locale.US, l.lat); lngText = "%.6f".format(Locale.US, l.lng)
+                }
+                leadUuid = l.recordUuid
+                leadName = "${l.firstName} ${l.lastName}".trim()
+            }
+        }
+    }
+    // Barangay list may arrive after the lead: match the lead's barangay name then
+    LaunchedEffect(barangays) {
+        if (isNew && initialLeadId != null && barangayId == null && barangays.isNotEmpty()) {
+            container.db.leads().get(initialLeadId)?.barangayName?.trim()?.let { n ->
+                barangays.firstOrNull { it.name.equals(n, ignoreCase = true) }?.let { barangayId = it.id }
+            }
         }
     }
     // New applicant from a tapstand: take that tapstand's barangay
@@ -205,6 +235,7 @@ fun ApplicantEditScreen(
             lat = lat, lng = lng, status = status,
             assignedTapstandId = tsId, meterSlot = if (tsId == null) null else slot, meterSerial = serialNorm.ifEmpty { null },
             remarks = remarks.trim().ifEmpty { null },
+            sourceLeadUuid = leadUuid,
             dirty = true, syncError = null, localUpdatedAt = System.currentTimeMillis(),
         )
         scope.launch {
@@ -236,6 +267,16 @@ fun ApplicantEditScreen(
         ) {
             original?.syncError?.let { Banner("⚠ The server refused the last change: $it", error = true) }
             original?.decisionReason?.takeIf { it.isNotBlank() }?.let { Banner("Office note: $it") }
+            if (leadUuid != null) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Web.Teal50).padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("From survey lead: ${leadName ?: "(not on this phone)"}", style = MaterialTheme.typography.bodySmall,
+                        color = Web.Teal800, modifier = Modifier.weight(1f))
+                    if (editable) TextButton(onClick = { leadUuid = null; leadName = null }) { Text("Remove link") }
+                }
+            }
 
             // ── Applicant ──
             Section("Applicant")

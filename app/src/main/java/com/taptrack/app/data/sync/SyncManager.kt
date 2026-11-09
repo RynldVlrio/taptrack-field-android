@@ -2,6 +2,7 @@ package com.taptrack.app.data.sync
 
 import com.taptrack.app.data.local.ApplicantEntity
 import com.taptrack.app.data.local.BarangayEntity
+import com.taptrack.app.data.local.LeadEntity
 import com.taptrack.app.data.local.LocalDb
 import com.taptrack.app.data.local.MapLayerEntity
 import com.taptrack.app.data.local.SyncMetaEntity
@@ -74,6 +75,7 @@ class SyncManager(
             pullBarangays(projectId)
             pullTapstands(projectId)
             pullApplicants(projectId)
+            pullLeads(projectId)
             pullMapLayers(projectId)
             downloadMapLayers()
             val now = System.currentTimeMillis()
@@ -173,6 +175,38 @@ class SyncManager(
         db.applicants().upsertAll(rows.filter { it.getString("id") !in dirty }.map { applicantFromServer(it) })
     }
 
+    /**
+     * HH Survey leads: full replace (a CSV re-upload deletes every lead, which a sync_version delta can't see).
+     * Only downloads when the newest lead changed, or every 6 h as a safety net. Viewers get nothing (database rule).
+     * Repeated survey record IDs (same survey submitted twice) are kept once.
+     */
+    private suspend fun pullLeads(projectId: String) {
+        try {
+            val newest = api.select("leads?select=sync_version&project_id=eq.$projectId&deleted_at=is.null&order=sync_version.desc&limit=1")
+            val marker = if (newest.length() == 0) "none" else newest.getJSONObject(0).optLong("sync_version").toString()
+            val lastMarker = db.syncMeta().get("leads_marker")
+            val lastAt = db.syncMeta().get("leads_at")?.toLongOrNull() ?: 0L
+            val now = System.currentTimeMillis()
+            if (marker == lastMarker && now - lastAt < 6 * 3_600_000L) return
+
+            val rows = mutableListOf<JSONObject>()
+            var offset = 0
+            while (true) {
+                val arr = api.select("leads?select=$LEAD_COLS&project_id=eq.$projectId&deleted_at=is.null&order=id.asc&limit=1000&offset=$offset")
+                for (i in 0 until arr.length()) rows += arr.getJSONObject(i)
+                if (arr.length() < 1000) break
+                offset += 1000
+            }
+            val seen = HashSet<String>()
+            val leads = rows.map { leadFromServer(it) }.filter { l -> l.recordUuid == null || seen.add(l.recordUuid) }
+            db.leads().replaceAll(projectId, leads)
+            db.syncMeta().put(SyncMetaEntity("leads_marker", marker))
+            db.syncMeta().put(SyncMetaEntity("leads_at", now.toString()))
+        } catch (e: ApiException) {
+            // leads not available to this account (or not set up yet) — tapstands/applicants sync carries on
+        }
+    }
+
     private suspend fun pullMapLayers(projectId: String) = pullTable(projectId, "map_layers", MAP_LAYER_COLS) { rows ->
         val existing = db.mapLayers().all().associateBy { it.id }
         db.mapLayers().upsertAll(rows.map { o ->
@@ -223,7 +257,11 @@ class SyncManager(
             "installed_on,remarks,is_draft,draft_label,planned_lat,planned_lng,plan_source,deleted_at,sync_version"
         const val APPLICANT_COLS = "id,project_id,application_no,last_name,first_name,middle_name,suffix,contact_no," +
             "barangay_id,sitio,address,household_size,account_type,lat,lng,status,date_applied,assigned_tapstand_id," +
-            "meter_slot,meter_serial,decision_reason,remarks,deleted_at,sync_version"
+            "meter_slot,meter_serial,decision_reason,remarks,source_lead_uuid,deleted_at,sync_version"
+        /** No income_range: not downloaded to phones. */
+        const val LEAD_COLS = "id,project_id,record_uuid,survey_date,barangay_id,barangay_name,zone,first_name,last_name," +
+            "contact_no,household_members,household_ownership,existing_water_source,drinking_water_source," +
+            "willingness_to_connect,remarks,lat,lng,google_maps_link,photo_drive_link"
     }
 }
 
@@ -292,6 +330,30 @@ fun applicantFromServer(o: JSONObject) = ApplicantEntity(
     remarks = o.optStringOrNull("remarks"),
     deleted = !o.isNull("deleted_at"),
     syncVersion = o.optLong("sync_version", 0),
+    sourceLeadUuid = o.optStringOrNull("source_lead_uuid"),
+)
+
+fun leadFromServer(o: JSONObject) = LeadEntity(
+    id = o.getString("id"),
+    projectId = o.getString("project_id"),
+    recordUuid = o.optStringOrNull("record_uuid")?.trim()?.ifEmpty { null },
+    surveyDate = o.optStringOrNull("survey_date"),
+    barangayId = o.optStringOrNull("barangay_id"),
+    barangayName = o.optStringOrNull("barangay_name"),
+    zone = o.optStringOrNull("zone"),
+    firstName = o.optStringOrNull("first_name") ?: "",
+    lastName = o.optStringOrNull("last_name") ?: "",
+    contactNo = o.optStringOrNull("contact_no"),
+    householdMembers = o.optIntOrNull("household_members"),
+    householdOwnership = o.optStringOrNull("household_ownership"),
+    existingWaterSource = o.optStringOrNull("existing_water_source"),
+    drinkingWaterSource = o.optStringOrNull("drinking_water_source"),
+    willingness = o.optStringOrNull("willingness_to_connect"),
+    remarks = o.optStringOrNull("remarks"),
+    lat = o.optDoubleOrNull("lat"),
+    lng = o.optDoubleOrNull("lng"),
+    mapsLink = o.optStringOrNull("google_maps_link"),
+    photoLink = o.optStringOrNull("photo_drive_link"),
 )
 
 fun ApplicantEntity.toServerJson(withKeys: Boolean): JSONObject = JSONObject().apply {
@@ -309,6 +371,7 @@ fun ApplicantEntity.toServerJson(withKeys: Boolean): JSONObject = JSONObject().a
     putNullable("meter_slot", meterSlot)
     putNullable("meter_serial", meterSerial)
     putNullable("remarks", remarks)
+    putNullable("source_lead_uuid", sourceLeadUuid)
 }
 
 // ── Shared map layers ─────────────────────────────────────────────────────────

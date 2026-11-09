@@ -21,13 +21,14 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MoreScreen(container: AppContainer) {
+fun MoreScreen(container: AppContainer, onOpenLeads: () -> Unit = {}) {
     val s = container.session
     val sync by container.sync.state.collectAsStateWithLifecycle()
     val pendingTs by remember { container.db.tapstands().observePending() }.collectAsStateWithLifecycle(0)
     val pendingApp by remember { container.db.applicants().observePending() }.collectAsStateWithLifecycle(0)
     val pendingPhotos by remember { container.db.photos().observePending() }.collectAsStateWithLifecycle(0)
     val lastSync by remember { container.db.syncMeta().observe("last_sync") }.collectAsStateWithLifecycle(null)
+    val leadCount by remember { container.db.leads().observeCount(s.projectId ?: "") }.collectAsStateWithLifecycle(0)
     val scope = rememberCoroutineScope()
     var confirmSignOut by remember { mutableStateOf(false) }
     val pending = pendingTs + pendingApp + pendingPhotos
@@ -60,6 +61,17 @@ fun MoreScreen(container: AppContainer) {
                     }
                     Text("Sync also runs automatically every minute and after each save.", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (s.canEdit) Card(onClick = onOpenLeads, modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("HH Survey leads", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(if (leadCount == 0) "None on this phone yet — they download with sync"
+                             else "$leadCount households · view, navigate, start an application",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text("›", style = MaterialTheme.typography.titleLarge)
                 }
             }
             OutlinedButton(onClick = { confirmSignOut = true }, modifier = Modifier.fillMaxWidth()) {

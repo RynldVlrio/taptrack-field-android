@@ -55,6 +55,9 @@ import com.taptrack.app.ui.components.OsmMapView
 import com.taptrack.app.ui.kind
 import com.taptrack.app.ui.label
 import com.taptrack.app.ui.theme.Web
+import com.taptrack.app.ui.screens.leads.displayName
+import com.taptrack.app.ui.screens.leads.will
+import com.taptrack.app.ui.screens.leads.LeadWill
 import com.taptrack.app.utils.RouteResult
 import com.taptrack.app.utils.fetchRoute
 import com.taptrack.app.utils.formatCoordinates
@@ -74,6 +77,7 @@ fun MapScreen(
     onAddTapstand: (Double, Double) -> Unit,
     onOpenApplicant: (String) -> Unit = {},
     onAddApplicant: (lat: Double?, lng: Double?, tapstandId: String?) -> Unit = { _, _, _ -> },
+    onOpenLead: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val vm: MapViewModel = viewModel(factory = MapViewModel.factory(container))
@@ -81,6 +85,7 @@ fun MapScreen(
     val barangays by vm.barangays.collectAsStateWithLifecycle()
     val layers by vm.layers.collectAsStateWithLifecycle()
     val applicants by vm.applicants.collectAsStateWithLifecycle()
+    val leads by vm.leads.collectAsStateWithLifecycle()
     val boundaryOverlays by vm.overlays.collectAsStateWithLifecycle()
     val canEdit = container.session.canEdit
     val canAdd = container.session.canAdd
@@ -94,6 +99,8 @@ fun MapScreen(
     var satellite by remember { mutableStateOf(prefs.getBoolean("satellite", false)) }
     var showProposed by remember { mutableStateOf(true) }
     var showApplicants by remember { mutableStateOf(prefs.getBoolean("applicants", true)) }
+    val canSeeLeads = container.session.canEdit          // Viewer: no survey leads
+    var showLeads by remember { mutableStateOf(canSeeLeads && prefs.getBoolean("leads", false)) }   // off by default
     var locateTrigger by remember { mutableIntStateOf(0) }
     var searchTarget by remember { mutableStateOf<GeoPoint?>(null) }
     var searchPin by remember { mutableStateOf<GeoPoint?>(null) }
@@ -127,11 +134,14 @@ fun MapScreen(
 
     LaunchedEffect(locationPermissions.allPermissionsGranted) { if (locationPermissions.allPermissionsGranted) locateTrigger++ }
 
-    val pins = remember(tapstands, showProposed, applicants, showApplicants) {
+    val pins = remember(tapstands, showProposed, applicants, showApplicants, leads, showLeads) {
+        val surveyed = if (!showLeads) emptyList() else leads
+            .filter { it.lat != null && it.lng != null }
+            .map { MapPin("l:" + it.id, it.lat!!, it.lng!!, it.will.argb, it.displayName, small = true) }
         val houses = if (!showApplicants) emptyList() else applicants
             .filter { it.lat != null && it.lng != null && it.status != "cancelled" && it.status != "rejected" }
             .map { MapPin("a:" + it.id, it.lat!!, it.lng!!, AppStatus.argb(it.status), it.fullName, small = true) }
-        houses + tapstands.filter { it.kind == TsKind.OFFICIAL || (showProposed && it.kind == TsKind.PROPOSED) }
+        surveyed + houses + tapstands.filter { it.kind == TsKind.OFFICIAL || (showProposed && it.kind == TsKind.PROPOSED) }
             .map { MapPin(it.id, it.lat, it.lng, TsStatus.argb(it.status), it.label, status = it.status) }
     }
     val usedCount = remember(applicants) { applicants.filter { it.holdsSlot && it.assignedTapstandId != null }.groupingBy { it.assignedTapstandId!! }.eachCount() }
@@ -160,7 +170,13 @@ fun MapScreen(
             boundaryOverlays = boundaryOverlays,
             searchPin = searchPin,
             modifier = Modifier.fillMaxSize(),
-            onPinClick = { id -> if (id.startsWith("a:")) onOpenApplicant(id.removePrefix("a:")) else selected = tapstands.firstOrNull { it.id == id } },
+            onPinClick = { id ->
+                when {
+                    id.startsWith("a:") -> onOpenApplicant(id.removePrefix("a:"))
+                    id.startsWith("l:") -> onOpenLead(id.removePrefix("l:"))
+                    else -> selected = tapstands.firstOrNull { it.id == id }
+                }
+            },
             onSearchPinClick = { pressPoint = searchPin },
             onMapViewReady = { mapViewRef = it },
             onLongPress = { lat, lng, _ -> searchPin = null; pressPoint = GeoPoint(lat, lng) },
@@ -197,7 +213,7 @@ fun MapScreen(
         if (routeLoading) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
 
         if (showLegend) {
-            MapLegend(boundaryOverlays, prefs, Modifier.align(Alignment.BottomStart).padding(12.dp))
+            MapLegend(boundaryOverlays, prefs, Modifier.align(Alignment.BottomStart).padding(12.dp), showLeads = showLeads)
         }
 
         Column(
@@ -210,6 +226,10 @@ fun MapScreen(
             MapControl(Icons.Default.Info, "Legend", active = showLegend) { showLegend = !showLegend }
             MapControl(Icons.Default.People, if (showApplicants) "Hide applicants" else "Show applicants", active = showApplicants) {
                 showApplicants = !showApplicants; prefs.edit().putBoolean("applicants", showApplicants).apply()
+            }
+            if (canSeeLeads) MapControl(Icons.Default.HomeWork, if (showLeads) "Hide survey leads" else "Show survey leads", active = showLeads) {
+                showLeads = !showLeads; prefs.edit().putBoolean("leads", showLeads).apply()
+                if (showLeads && leads.isEmpty()) Toast.makeText(context, "No survey leads on this phone yet — sync while online", Toast.LENGTH_SHORT).show()
             }
             MapControl(Icons.Default.Flag, if (showProposed) "Hide proposed" else "Show proposed", active = showProposed) { showProposed = !showProposed }
             MapControl(Icons.Default.Satellite, "Satellite", active = satellite) { satellite = !satellite; prefs.edit().putBoolean("satellite", satellite).apply() }
@@ -394,7 +414,7 @@ private fun LayerSwatch(r: com.taptrack.app.utils.LegendRow, weight: Float) {
  * max ~1/3 of the screen (scrolls inside), layers foldable (remembered on this phone).
  */
 @Composable
-private fun MapLegend(overlays: List<BoundaryOverlay>, prefs: android.content.SharedPreferences, modifier: Modifier = Modifier) {
+private fun MapLegend(overlays: List<BoundaryOverlay>, prefs: android.content.SharedPreferences, modifier: Modifier = Modifier, showLeads: Boolean = false) {
     val small = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 13.sp)
     var tab by remember { mutableStateOf(if (overlays.isNotEmpty()) prefs.getString("legend_tab", "ts") ?: "ts" else "ts") }
     var folded by remember { mutableStateOf(prefs.getStringSet("legend_folded", emptySet())!!.toSet()) }
@@ -431,6 +451,20 @@ private fun MapLegend(overlays: List<BoundaryOverlay>, prefs: android.content.Sh
                         }
                     }
                     Text("* Proposed = to verify, not counted", style = small.copy(fontSize = 10.sp), color = Web.Slate500)
+                    if (showLeads) {
+                        Text("Survey leads (willingness)", style = small, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 3.dp))
+                        LeadWill.entries.chunked(2).forEach { pair ->
+                            Row(Modifier.width(234.dp)) {
+                                pair.forEach { w ->
+                                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                        Box(Modifier.size(9.dp).background(Color.White, CircleShape).padding(1.5.dp).background(Color(w.argb), CircleShape))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(w.label, style = small, maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
                     overlays.forEach { o ->
                         val rows = o.legend.ifEmpty {

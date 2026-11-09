@@ -8,6 +8,7 @@ import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
+import androidx.room.Transaction
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
 import androidx.room.migration.Migration
@@ -92,6 +93,36 @@ data class ApplicantEntity(
     val isNew: Boolean = false,
     val syncError: String? = null,
     val localUpdatedAt: Long = System.currentTimeMillis(),
+    val sourceLeadUuid: String? = null,   // HH Survey lead (record_uuid) this application started from
+)
+
+/**
+ * HH Survey lead (household survey, uploaded as CSV on the web). View-only on phones.
+ * Replaced in full on sync (a CSV re-upload deletes and re-inserts every lead).
+ * Income range is deliberately not downloaded.
+ */
+@Entity(tableName = "leads")
+data class LeadEntity(
+    @PrimaryKey val id: String,
+    val projectId: String,
+    val recordUuid: String?,         // survey record ID — stable across CSV re-uploads (applicants link to this)
+    val surveyDate: String?,
+    val barangayId: String?,
+    val barangayName: String?,
+    val zone: String?,
+    val firstName: String,
+    val lastName: String,
+    val contactNo: String?,
+    val householdMembers: Int?,
+    val householdOwnership: String?,
+    val existingWaterSource: String?,
+    val drinkingWaterSource: String?,
+    val willingness: String?,
+    val remarks: String?,
+    val lat: Double?,
+    val lng: Double?,
+    val mapsLink: String?,
+    val photoLink: String?,
 )
 
 /** Photo waiting to be uploaded to Supabase Storage (then recorded in `attachments`). */
@@ -195,6 +226,33 @@ interface ApplicantDao {
 }
 
 @Dao
+abstract class LeadDao {
+    @Query("SELECT * FROM leads WHERE projectId = :projectId ORDER BY barangayName, lastName, firstName")
+    abstract fun observe(projectId: String): Flow<List<LeadEntity>>
+
+    @Query("SELECT * FROM leads WHERE id = :id")
+    abstract suspend fun get(id: String): LeadEntity?
+
+    @Query("SELECT * FROM leads WHERE recordUuid = :uuid LIMIT 1")
+    abstract suspend fun getByUuid(uuid: String): LeadEntity?
+
+    @Query("SELECT COUNT(*) FROM leads WHERE projectId = :projectId")
+    abstract fun observeCount(projectId: String): Flow<Int>
+
+    @Query("DELETE FROM leads WHERE projectId = :projectId")
+    protected abstract suspend fun deleteProject(projectId: String)
+
+    @Upsert protected abstract suspend fun upsertAll(rows: List<LeadEntity>)
+
+    /** Swap in the server's full list in one step (the list never shows half-loaded). */
+    @Transaction
+    open suspend fun replaceAll(projectId: String, rows: List<LeadEntity>) {
+        deleteProject(projectId)
+        upsertAll(rows)
+    }
+}
+
+@Dao
 interface PhotoDao {
     @Insert suspend fun insert(row: PhotoEntity)
 
@@ -249,8 +307,9 @@ interface SyncMetaDao {
     entities = [
         BarangayEntity::class, TapstandEntity::class, ApplicantEntity::class,
         PhotoEntity::class, SyncMetaEntity::class, BoundaryEntity::class, MapLayerEntity::class,
+        LeadEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class LocalDb : RoomDatabase() {
@@ -261,6 +320,7 @@ abstract class LocalDb : RoomDatabase() {
     abstract fun syncMeta(): SyncMetaDao
     abstract fun boundaryDao(): BoundaryDao
     abstract fun mapLayers(): MapLayerDao
+    abstract fun leads(): LeadDao
 
     /** Wipe synced data (sign-out / switch user). Map layers (boundaries) are kept. */
     suspend fun clearProjectData() = withContext(Dispatchers.IO) {
@@ -270,6 +330,7 @@ abstract class LocalDb : RoomDatabase() {
             db.execSQL("DELETE FROM barangays")
             db.execSQL("DELETE FROM tapstands")
             db.execSQL("DELETE FROM applicants")
+            db.execSQL("DELETE FROM leads")
             db.execSQL("DELETE FROM photos")
             db.execSQL("DELETE FROM map_layers")
             db.execSQL("DELETE FROM sync_meta")
@@ -301,9 +362,25 @@ abstract class LocalDb : RoomDatabase() {
             }
         }
 
+        /** v3 → v4: HH Survey leads + applicant link to a lead. Keeps unsynced field data. */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `applicants` ADD COLUMN `sourceLeadUuid` TEXT")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `leads` (`id` TEXT NOT NULL, `projectId` TEXT NOT NULL, `recordUuid` TEXT, " +
+                        "`surveyDate` TEXT, `barangayId` TEXT, `barangayName` TEXT, `zone` TEXT, `firstName` TEXT NOT NULL, " +
+                        "`lastName` TEXT NOT NULL, `contactNo` TEXT, `householdMembers` INTEGER, `householdOwnership` TEXT, " +
+                        "`existingWaterSource` TEXT, `drinkingWaterSource` TEXT, `willingness` TEXT, `remarks` TEXT, " +
+                        "`lat` REAL, `lng` REAL, `mapsLink` TEXT, `photoLink` TEXT, PRIMARY KEY(`id`))"
+                )
+                // re-pull applicants so existing rows get their lead link
+                db.execSQL("DELETE FROM sync_meta WHERE `key` = 'v_applicants'")
+            }
+        }
+
         fun create(context: Context): LocalDb =
             Room.databaseBuilder(context.applicationContext, LocalDb::class.java, "taptrack_v6.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigration()
                 .build()
     }
