@@ -290,6 +290,10 @@ interface PhotoDao {
 
     @Query("SELECT COUNT(*) FROM photos WHERE uploaded = 0")
     fun observePending(): Flow<Int>
+
+    /** Surveyed → Installed: the installation photo replaces the earlier photos on this phone too. */
+    @Query("DELETE FROM photos WHERE entityType = :type AND entityId = :entityId AND kind != 'installation'")
+    suspend fun deleteNonInstallation(type: String, entityId: String)
 }
 
 @Dao

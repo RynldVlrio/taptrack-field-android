@@ -102,7 +102,8 @@ private fun MainShell(container: AppContainer) {
                         onAddTapstand = { lat, lng -> nav.navigate(editRoute(lat = lat, lng = lng)) },
                         onOpenApplicant = { nav.navigate(appRoute(id = it)) },
                         onAddApplicant = { lat, lng, ts -> nav.navigate(appRoute(lat = lat, lng = lng, ts = ts)) },
-                        onOpenLead = { nav.navigate("lead/$it") })
+                        onOpenLead = { nav.navigate("lead/$it") },
+                        onStartLeadApplication = { nav.navigate(appRoute(lead = it)) })
                 }
                 composable("tapstands") {
                     TapstandListScreen(container, onOpen = { nav.navigate(editRoute(id = it)) }, onAdd = { nav.navigate(editRoute()) })

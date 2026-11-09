@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -40,6 +41,7 @@ fun RemotePhotos(
     skipIds: Set<String> = emptySet(),
     size: Int = 96,
     showEmpty: Boolean = false,
+    replacing: Boolean = false,      // Surveyed → Installed in progress: these get replaced by the installation photo
 ) {
     val context = LocalContext.current
     var photos by remember(entityId) { mutableStateOf<List<RemotePhoto>?>(null) }
@@ -80,7 +82,7 @@ fun RemotePhotos(
         return
     }
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        shown.forEach { p -> PhotoTile(p, size) { big = p } }
+        shown.forEach { p -> PhotoTile(p, size, replacing && p.kind != "installation") { big = p } }
     }
 
     big?.let { p ->
@@ -95,11 +97,11 @@ fun RemotePhotos(
 }
 
 @Composable
-private fun PhotoTile(p: RemotePhoto, size: Int, onClick: () -> Unit) {
-    Box(Modifier.size(size.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)) {
+private fun PhotoTile(p: RemotePhoto, size: Int, replaced: Boolean, onClick: () -> Unit) {
+    Box(Modifier.size(size.dp).clip(RoundedCornerShape(8.dp)).alpha(if (replaced) 0.4f else 1f).clickable(onClick = onClick)) {
         AsyncImage(model = p.file, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         Text(
-            label(p), style = MaterialTheme.typography.labelSmall, color = Color.White,
+            if (replaced) "Will be replaced" else label(p), style = MaterialTheme.typography.labelSmall, color = Color.White,
             modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth()
                 .background(if (p.kind == "installation") Color(0xD94D7C0F) else Color(0x99000000))
                 .padding(horizontal = 4.dp, vertical = 2.dp),

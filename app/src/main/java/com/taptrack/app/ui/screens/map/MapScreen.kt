@@ -78,6 +78,7 @@ fun MapScreen(
     onOpenApplicant: (String) -> Unit = {},
     onAddApplicant: (lat: Double?, lng: Double?, tapstandId: String?) -> Unit = { _, _, _ -> },
     onOpenLead: (String) -> Unit = {},
+    onStartLeadApplication: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val vm: MapViewModel = viewModel(factory = MapViewModel.factory(container))
@@ -111,6 +112,7 @@ fun MapScreen(
     var route by remember { mutableStateOf<RouteResult?>(null) }
     var routeLoading by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<TapstandEntity?>(null) }
+    var selectedLead by remember { mutableStateOf<com.taptrack.app.data.local.LeadEntity?>(null) }
     var pressPoint by remember { mutableStateOf<GeoPoint?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -173,7 +175,7 @@ fun MapScreen(
             onPinClick = { id ->
                 when {
                     id.startsWith("a:") -> onOpenApplicant(id.removePrefix("a:"))
-                    id.startsWith("l:") -> onOpenLead(id.removePrefix("l:"))
+                    id.startsWith("l:") -> selectedLead = leads.firstOrNull { it.id == id.removePrefix("l:") }
                     else -> selected = tapstands.firstOrNull { it.id == id }
                 }
             },
@@ -273,6 +275,40 @@ fun MapScreen(
                 if (canAdd && t.kind == TsKind.OFFICIAL && t.status !in setOf("inactive", "decommissioned")) {
                     FilledTonalButton(onClick = { selected = null; onAddApplicant(null, null, t.id) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.PersonAdd, null); Spacer(Modifier.width(6.dp)); Text("New applicant on this tapstand")
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Survey lead pin sheet ───────────────────────────────────────────────────
+    selectedLead?.let { l ->
+        val applied = l.recordUuid != null && applicants.any { !it.deleted && it.status != "cancelled" && it.sourceLeadUuid == l.recordUuid }
+        ModalBottomSheet(onDismissRequest = { selectedLead = null }) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(16.dp).clip(CircleShape).background(Color(l.will.argb)))
+                    Spacer(Modifier.width(8.dp))
+                    Text(l.displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    if (applied) com.taptrack.app.ui.screens.leads.AppliedChip()
+                }
+                Text(listOfNotNull("Survey lead", l.will.label, l.barangayName, l.zone).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+                Text(listOfNotNull(
+                    l.contactNo?.takeIf { it.isNotBlank() }?.let { "☎ $it" },
+                    l.householdMembers?.let { "$it in household" },
+                    l.existingWaterSource?.takeIf { it.isNotBlank() }?.let { "water: $it" },
+                ).joinToString("  ·  "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { selectedLead = null; onOpenLead(l.id) }) { Text("Open") }
+                    if (l.lat != null && l.lng != null) {
+                        OutlinedButton(onClick = { selectedLead = null; routeTo(l.lat, l.lng) }) { Text("Route") }
+                        OutlinedButton(onClick = { openDirections(context, l.lat, l.lng) }) { Text("Directions") }
+                    }
+                }
+                if (canAdd) {
+                    FilledTonalButton(onClick = { selectedLead = null; onStartLeadApplication(l.id) }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.PersonAdd, null); Spacer(Modifier.width(6.dp))
+                        Text(if (applied) "Start another application (same household)" else "Start application")
                     }
                 }
             }

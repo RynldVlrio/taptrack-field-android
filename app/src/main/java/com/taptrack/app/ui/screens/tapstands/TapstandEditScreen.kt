@@ -189,6 +189,8 @@ fun TapstandEditScreen(
         )
         scope.launch {
             container.db.tapstands().upsert(row)
+            // Surveyed → Installed: the installation photo replaces the survey photos (the server removes its copies too)
+            if (action == SaveAction.SAVE && installing) container.db.photos().deleteNonInstallation("tapstand", row.id)
             newPhotos.forEach { path ->
                 container.db.photos().insert(PhotoEntity(UUID.randomUUID().toString(), projectId, "tapstand", row.id,
                     kind = if (action == SaveAction.SAVE && installing) "installation" else "photo",
@@ -328,7 +330,7 @@ fun TapstandEditScreen(
                 }
                 if (isNewRecord) Hint("Status applies when added as official. Mark it Installed later, with an installation photo.")
                 if (installing) Surface(color = Web.Amber50, shape = RoundedCornerShape(8.dp)) {
-                    Text("📷 Installed needs an installation photo — take it under Photos below, then Save.",
+                    Text("📷 Installed needs an installation photo — take it under Photos below, then Save. It replaces the survey photo(s).",
                         Modifier.fillMaxWidth().padding(10.dp), style = MaterialTheme.typography.bodySmall, color = Web.Amber700)
                 }
             }
@@ -382,7 +384,8 @@ fun TapstandEditScreen(
             // ── Photos ──
             Text(if (installing) "Photos — installation photo required" else "Photos", style = MaterialTheme.typography.titleSmall)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                (savedPhotos.map { it.filePath to (if (it.uploaded) "uploaded" else "waiting") } + newPhotos.map { it to "not saved" }).forEach { (path, tag) ->
+                (savedPhotos.map { it.filePath to (if (installing && it.kind != "installation") "will be replaced" else if (it.uploaded) "uploaded" else "waiting") } +
+                    newPhotos.map { it to (if (installing) "installation" else "not saved") }).forEach { (path, tag) ->
                     Box {
                         AsyncImage(model = File(path), contentDescription = null, contentScale = ContentScale.Crop,
                             modifier = Modifier.size(96.dp).clip(RoundedCornerShape(8.dp)))
@@ -402,7 +405,8 @@ fun TapstandEditScreen(
             }
             // photos already on the server (any phone), e.g. the installation photo
             if (!isNewRecord && original?.isNew == false) {
-                com.taptrack.app.ui.components.RemotePhotos(container, "tapstand", entityId, skipIds = savedPhotos.map { it.id }.toSet())
+                com.taptrack.app.ui.components.RemotePhotos(container, "tapstand", entityId, skipIds = savedPhotos.map { it.id }.toSet(),
+                    replacing = installing)
             }
 
             // ── Actions ──
