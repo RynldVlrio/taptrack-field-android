@@ -113,6 +113,9 @@ fun TapstandEditScreen(
     val editable = canEdit && !isCancelled
     val isOfficial = kind == TsKind.OFFICIAL
     val isOffice = container.session.isOffice
+    // Surveyed → Installed needs an installation photo taken now (the server checks it too).
+    val installing = isOfficial && original?.isNew == false && status == "installed" &&
+        original?.status in setOf("surveyed", "approved", "under_construction")
 
     val savedPhotos by remember(entityId) { container.db.photos().observeFor("tapstand", entityId) }
         .collectAsStateWithLifecycle(emptyList())
@@ -152,6 +155,9 @@ fun TapstandEditScreen(
         if (goesOfficial && brgy?.code == null) {
             Toast.makeText(context, "Choose a barangay (with a code) to make this an official tapstand", Toast.LENGTH_LONG).show(); return
         }
+        if (action == SaveAction.SAVE && installing && newPhotos.isEmpty()) {
+            Toast.makeText(context, "Take an installation photo first (Photos, below)", Toast.LENGTH_LONG).show(); return
+        }
         val capacity = capacityText.toIntOrNull()?.coerceAtLeast(1) ?: 10
         val o = original
         val newStatus: String; val newDraft: Boolean
@@ -175,7 +181,9 @@ fun TapstandEditScreen(
             barangayId = barangayId, sitio = sitio.trim().ifEmpty { null }, locationDesc = locationDesc.trim().ifEmpty { null },
             lat = lat, lng = lng, status = newStatus, isDraft = newDraft,
             draftLabel = draftLabel.trim().ifEmpty { null } ?: if (newDraft) "Field proposal" else null,
-            maxConnections = capacity, installedOn = installedOn, remarks = newRemarks,
+            maxConnections = capacity,
+            installedOn = if (action == SaveAction.SAVE && installing) installedOn ?: SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) else installedOn,
+            remarks = newRemarks,
             makeOfficial = action == SaveAction.MAKE_OFFICIAL, dirty = true, syncError = null,
             localUpdatedAt = System.currentTimeMillis(),
         )
@@ -183,6 +191,7 @@ fun TapstandEditScreen(
             container.db.tapstands().upsert(row)
             newPhotos.forEach { path ->
                 container.db.photos().insert(PhotoEntity(UUID.randomUUID().toString(), projectId, "tapstand", row.id,
+                    kind = if (action == SaveAction.SAVE && installing) "installation" else "photo",
                     filePath = path, lat = lat, lng = lng))
             }
             container.sync.requestSync()
@@ -294,8 +303,12 @@ fun TapstandEditScreen(
                 val current = if (statusIsForVerify) officialStatus else status
                 // decommission / reinstate go through the lifecycle actions; field can't set Inactive
                 val statusLocked = isOfficial && (original?.status == "decommissioned" || (original?.status in RETIRED && !isOffice))
+                // Installed: only for an official tapstand already on the server (needs an installation photo);
+                // a new or just-verified tapstand starts as Surveyed.
+                val canInstall = isOfficial && original?.isNew == false
                 val choices = TsStatus.official.filter { s ->
-                    s.key == original?.status || (s.key != "decommissioned" && (s.key != "inactive" || isOffice || !isOfficial))
+                    s.key == original?.status || (s.key != "decommissioned" && (s.key != "inactive" || isOffice || !isOfficial) &&
+                        (s.key != "installed" || canInstall))
                 }
                 val statusEditable = editable && !statusLocked
                 ExposedDropdownMenuBox(expanded = statusMenu && statusEditable, onExpandedChange = { statusMenu = it }) {
@@ -313,7 +326,11 @@ fun TapstandEditScreen(
                         }
                     }
                 }
-                if (isNewRecord) Hint("Status applies when added as official.")
+                if (isNewRecord) Hint("Status applies when added as official. Mark it Installed later, with an installation photo.")
+                if (installing) Surface(color = Web.Amber50, shape = RoundedCornerShape(8.dp)) {
+                    Text("📷 Installed needs an installation photo — take it under Photos below, then Save.",
+                        Modifier.fillMaxWidth().padding(10.dp), style = MaterialTheme.typography.bodySmall, color = Web.Amber700)
+                }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -363,7 +380,7 @@ fun TapstandEditScreen(
             }
 
             // ── Photos ──
-            Text("Photos", style = MaterialTheme.typography.titleSmall)
+            Text(if (installing) "Photos — installation photo required" else "Photos", style = MaterialTheme.typography.titleSmall)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 (savedPhotos.map { it.filePath to (if (it.uploaded) "uploaded" else "waiting") } + newPhotos.map { it to "not saved" }).forEach { (path, tag) ->
                     Box {
@@ -376,9 +393,16 @@ fun TapstandEditScreen(
                 if (editable) {
                     OutlinedCard(onClick = { if (cameraPermission.status.isGranted) showCamera = true else cameraPermission.launchPermissionRequest() },
                         modifier = Modifier.size(96.dp)) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Default.AddAPhoto, "Take photo") }
+                        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.AddAPhoto, "Take photo")
+                            if (installing) Text("Installation", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
+            }
+            // photos already on the server (any phone), e.g. the installation photo
+            if (!isNewRecord && original?.isNew == false) {
+                com.taptrack.app.ui.components.RemotePhotos(container, "tapstand", entityId, skipIds = savedPhotos.map { it.id }.toSet())
             }
 
             // ── Actions ──

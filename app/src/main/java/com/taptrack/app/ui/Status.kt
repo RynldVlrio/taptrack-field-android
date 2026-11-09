@@ -19,8 +19,12 @@ object TsStatus {
         StatusDef("decommissioned", "Decommissioned", 0xFF3F3F46),
         StatusDef("cancelled", "Cancelled", 0xFFA1A1AA),
     )
+    /** No longer used (Surveyed → Installed); kept only so old records/history still have a label. */
+    val retired = setOf("approved", "under_construction")
+    /** Statuses shown in the legend. */
+    val active = all.filter { it.key !in retired }
     /** Statuses an official (verified) tapstand can have. */
-    val official = all.filter { it.key !in setOf("proposed", "cancelled") }
+    val official = active.filter { it.key !in setOf("proposed", "cancelled") }
 
     fun of(key: String) = all.firstOrNull { it.key == key } ?: StatusDef(key, key, 0xFF64748B)
     fun color(key: String) = Color(of(key).color)

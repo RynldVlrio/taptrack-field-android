@@ -203,11 +203,7 @@ fun OsmMapView(
                     val centroid = computeFeatureCentroid(feature.rings) ?: continue
                     addLayerLabel(mapView, context, label, centroid, activeBoundaryOverlays)
                 }
-                // lines: ONE label per name, half-way along its longest piece (a pipe split into 200 segments → 1 label)
-                overlay.polylines.filter { it.name.isNotBlank() }.groupBy { it.name }.forEach { (name, feats) ->
-                    val longest = feats.flatMap { it.rings }.maxByOrNull { lineLength(it) } ?: return@forEach
-                    addLayerLabel(mapView, context, name, pointAlong(longest, 0.5), activeBoundaryOverlays, minZoom = LINE_LABEL_MIN_ZOOM)
-                }
+                // lines: no labels on the map (pipe node names crowd it) — tap a pipe to see its name
             }
         }
         mapView.invalidate()
@@ -336,23 +332,10 @@ private fun createDotBitmap(context: android.content.Context, color: Int): Bitma
     return BitmapDrawable(context.resources, bmp)
 }
 
-/** Pipe / line names only from street level, so node names (n1238 …) don't cover the map when zoomed out. */
-private const val LINE_LABEL_MIN_ZOOM = 17.0
-
-/** A label marker that is only drawn at or above [minZoom]. */
-private class ZoomLabel(mapView: MapView, private val minZoom: Double) : Marker(mapView) {
-    override fun draw(canvas: android.graphics.Canvas, mapView: MapView, shadow: Boolean) {
-        if (mapView.zoomLevelDouble >= minZoom) super.draw(canvas, mapView, shadow)
-    }
-    override fun draw(canvas: android.graphics.Canvas, pj: org.osmdroid.views.Projection) {
-        if (pj.zoomLevel >= minZoom) super.draw(canvas, pj)
-    }
-}
-
 private fun addLayerLabel(mapView: MapView, context: android.content.Context, label: String, at: GeoPoint,
-                          into: MutableList<org.osmdroid.views.overlay.Overlay>, minZoom: Double = 0.0) {
+                          into: MutableList<org.osmdroid.views.overlay.Overlay>) {
     if (label.isBlank()) return
-    val marker = ZoomLabel(mapView, minZoom).apply {
+    val marker = Marker(mapView).apply {
         position = at
         icon = layerLabelDrawable(context, label)
         title = label

@@ -70,8 +70,9 @@ class SyncManager(
         val projectId = session.projectId ?: return@withLock false
         _state.update { it.copy(running = true) }
         try {
+            pushPhotos(projectId)          // photos of records already on the server first (Installed needs its photo there)
             val refused = pushTapstands() + pushApplicants()
-            pushPhotos(projectId)
+            pushPhotos(projectId)          // then photos of records just created
             pullBarangays(projectId)
             pullTapstands(projectId)
             pullApplicants(projectId)
@@ -134,9 +135,9 @@ class SyncManager(
     }
 
     private suspend fun pushPhotos(projectId: String) {
-        val stillLocal = (db.tapstands().dirtyIds() + db.applicants().dirtyIds()).toSet()
+        val stillLocal = (db.tapstands().newIds() + db.applicants().newIds()).toSet()
         for (p in db.photos().pending()) {
-            if (p.entityId in stillLocal) continue           // upload the record first
+            if (p.entityId in stillLocal) continue           // record not on the server yet: upload it first
             val file = File(p.filePath)
             if (!file.exists()) { db.photos().markError(p.id, "File missing"); continue }
             try {

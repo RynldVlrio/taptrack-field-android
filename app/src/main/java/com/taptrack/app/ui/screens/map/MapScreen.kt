@@ -255,6 +255,9 @@ fun MapScreen(
                 Text(TsStatus.of(t.status).label + (barangays.firstOrNull { it.id == t.barangayId }?.let { " · ${it.name}" } ?: "") +
                     (t.sitio?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodyMedium)
                 Text(formatCoordinates(t.lat, t.lng), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (t.kind == TsKind.OFFICIAL && t.status != "surveyed" && !t.isNew) {
+                    com.taptrack.app.ui.components.RemotePhotos(container, "tapstand", t.id, size = 72)
+                }
                 if (t.kind == TsKind.OFFICIAL) {
                     val used = usedCount[t.id] ?: 0
                     Text("Meters: $used / ${t.maxConnections}" + if (used >= t.maxConnections) "  (at design capacity)" else "",
@@ -438,7 +441,7 @@ private fun MapLegend(overlays: List<BoundaryOverlay>, prefs: android.content.Sh
             Column(Modifier.heightIn(max = maxH).verticalScroll(androidx.compose.foundation.rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 if (shownTab == "ts") {
-                    TsStatus.all.filter { it.key != "cancelled" }.chunked(2).forEach { pair ->
+                    TsStatus.active.filter { it.key != "cancelled" }.chunked(2).forEach { pair ->
                         Row(Modifier.width(234.dp)) {
                             pair.forEach { s ->
                                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {

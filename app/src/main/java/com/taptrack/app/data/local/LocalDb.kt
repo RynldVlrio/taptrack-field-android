@@ -197,6 +197,10 @@ interface TapstandDao {
     @Query("SELECT id FROM tapstands WHERE dirty = 1")
     suspend fun dirtyIds(): List<String>
 
+    /** Created on this phone and not uploaded yet (not on the server). */
+    @Query("SELECT id FROM tapstands WHERE isNew = 1")
+    suspend fun newIds(): List<String>
+
     @Upsert suspend fun upsert(row: TapstandEntity)
     @Upsert suspend fun upsertAll(rows: List<TapstandEntity>)
 
@@ -224,6 +228,9 @@ interface ApplicantDao {
 
     @Query("SELECT id FROM applicants WHERE dirty = 1")
     suspend fun dirtyIds(): List<String>
+
+    @Query("SELECT id FROM applicants WHERE isNew = 1")
+    suspend fun newIds(): List<String>
 
     @Upsert suspend fun upsert(row: ApplicantEntity)
     @Upsert suspend fun upsertAll(rows: List<ApplicantEntity>)
