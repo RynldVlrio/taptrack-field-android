@@ -70,6 +70,8 @@ fun OsmMapView(
     initialLng: Double = PROJECT_LNG,
     zoom: Double = 14.0,
     routePoints: List<GeoPoint>? = null,
+    routeColor: Int = android.graphics.Color.parseColor("#4A90E2"),
+    routeWidthDp: Float = 5f,
     boundaryOverlays: List<BoundaryOverlay> = emptyList(),
     searchPin: GeoPoint? = null,
     onPinClick: (String) -> Unit = {},
@@ -211,14 +213,14 @@ fun OsmMapView(
 
     // ── Route line ─────────────────────────────────────────────────────────────
     val routeOverlay = remember { mutableStateOf<Polyline?>(null) }
-    LaunchedEffect(routePoints) {
+    LaunchedEffect(routePoints, routeColor, routeWidthDp) {
         routeOverlay.value?.let { mapView.overlays.remove(it) }
         if (!routePoints.isNullOrEmpty()) {
             val density = context.resources.displayMetrics.density
             val line = Polyline().apply {
                 setPoints(routePoints)
-                outlinePaint.color = android.graphics.Color.parseColor("#4A90E2")
-                outlinePaint.strokeWidth = 9f * density
+                outlinePaint.color = routeColor
+                outlinePaint.strokeWidth = routeWidthDp * density
                 outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
                 outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
                 outlinePaint.isAntiAlias = true

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <files-path name="tap_photos" path="tap_photos/" />
+    <files-path name="as_built_kml" path="as_built_kml/" />
+    <external-files-path name="ext_as_built_kml" path="as_built_kml/" />
     <cache-path name="cache" path="." />
 </paths>

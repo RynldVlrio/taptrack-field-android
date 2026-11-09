@@ -22,6 +22,7 @@ import androidx.navigation.navArgument
 import com.taptrack.app.AppContainer
 import com.taptrack.app.ui.screens.applicants.ApplicantEditScreen
 import com.taptrack.app.ui.screens.applicants.ApplicantListScreen
+import com.taptrack.app.ui.screens.asbuilt.AsBuiltScreen
 import com.taptrack.app.ui.screens.leads.LeadDetailScreen
 import com.taptrack.app.ui.screens.leads.LeadListScreen
 import com.taptrack.app.ui.screens.login.AuthScreens
@@ -38,6 +39,7 @@ private val tabs = listOf(
     Tab("map", "Map", WebIcons.Map),
     Tab("tapstands", "Tapstands", WebIcons.Tapstands),
     Tab("applicants", "Applicants", WebIcons.Applicants),
+    Tab("as_built", "As-Built", WebIcons.Pipeline),
     Tab("more", "Settings", WebIcons.Settings),
 )
 
@@ -104,6 +106,9 @@ private fun MainShell(container: AppContainer) {
                         onAddApplicant = { lat, lng, ts -> nav.navigate(appRoute(lat = lat, lng = lng, ts = ts)) },
                         onOpenLead = { nav.navigate("lead/$it") },
                         onStartLeadApplication = { nav.navigate(appRoute(lead = it)) })
+                }
+                composable("as_built") {
+                    AsBuiltScreen(container)
                 }
                 composable("tapstands") {
                     TapstandListScreen(container, onOpen = { nav.navigate(editRoute(id = it)) }, onAdd = { nav.navigate(editRoute()) })
