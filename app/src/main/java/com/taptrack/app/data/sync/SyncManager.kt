@@ -76,6 +76,7 @@ class SyncManager(
             pullTapstands(projectId)
             pullApplicants(projectId)
             pullLeads(projectId)
+            pruneRemoved(projectId)
             pullMapLayers(projectId)
             downloadMapLayers()
             val now = System.currentTimeMillis()
@@ -205,6 +206,42 @@ class SyncManager(
         } catch (e: ApiException) {
             // leads not available to this account (or not set up yet) — tapstands/applicants sync carries on
         }
+    }
+
+    /**
+     * Records deleted outright on the server (e.g. a web cleanup) never show up in the sync_version delta,
+     * so the phone would keep them. Every 6 h (and right after this update) compare ids with the server and
+     * drop local copies the server no longer has. Rows with unsent changes on this phone are never touched.
+     */
+    private suspend fun pruneRemoved(projectId: String) {
+        val now = System.currentTimeMillis()
+        val last = db.syncMeta().get("prune_at")?.toLongOrNull() ?: 0L
+        if (now - last < 6 * 3_600_000L) return
+        try {
+            val serverApplicants = serverIds("applicants", projectId)
+            val goneApplicants = db.applicants().syncedIds(projectId).filter { it !in serverApplicants }
+            goneApplicants.chunked(500).forEach { db.applicants().deleteIds(it) }
+
+            val serverTapstands = serverIds("tapstands", projectId)
+            val goneTapstands = db.tapstands().syncedIds(projectId).filter { it !in serverTapstands }
+            goneTapstands.chunked(500).forEach { db.tapstands().deleteIds(it) }
+
+            db.syncMeta().put(SyncMetaEntity("prune_at", now.toString()))
+        } catch (e: ApiException) {
+            // try again next sync
+        }
+    }
+
+    private suspend fun serverIds(table: String, projectId: String): Set<String> {
+        val ids = HashSet<String>()
+        var offset = 0
+        while (true) {
+            val arr = api.select("$table?select=id&project_id=eq.$projectId&order=id.asc&limit=1000&offset=$offset")
+            for (i in 0 until arr.length()) ids += arr.getJSONObject(i).getString("id")
+            if (arr.length() < 1000) break
+            offset += 1000
+        }
+        return ids
     }
 
     private suspend fun pullMapLayers(projectId: String) = pullTable(projectId, "map_layers", MAP_LAYER_COLS) { rows ->

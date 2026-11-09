@@ -202,6 +202,13 @@ interface TapstandDao {
 
     @Query("SELECT COUNT(*) FROM tapstands WHERE dirty = 1")
     fun observePending(): Flow<Int>
+
+    /** Rows that came from the server and have no local changes (safe to drop if the server no longer has them). */
+    @Query("SELECT id FROM tapstands WHERE projectId = :projectId AND dirty = 0 AND isNew = 0")
+    suspend fun syncedIds(projectId: String): List<String>
+
+    @Query("DELETE FROM tapstands WHERE id IN (:ids)")
+    suspend fun deleteIds(ids: List<String>)
 }
 
 @Dao
@@ -223,6 +230,12 @@ interface ApplicantDao {
 
     @Query("SELECT COUNT(*) FROM applicants WHERE dirty = 1")
     fun observePending(): Flow<Int>
+
+    @Query("SELECT id FROM applicants WHERE projectId = :projectId AND dirty = 0 AND isNew = 0")
+    suspend fun syncedIds(projectId: String): List<String>
+
+    @Query("DELETE FROM applicants WHERE id IN (:ids)")
+    suspend fun deleteIds(ids: List<String>)
 }
 
 @Dao
