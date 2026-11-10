@@ -15,6 +15,7 @@ import com.taptrack.app.data.remote.optDoubleOrNull
 import com.taptrack.app.data.remote.optIntOrNull
 import com.taptrack.app.data.remote.optStringOrNull
 import com.taptrack.app.data.remote.putNullable
+import com.taptrack.app.utils.PhotoCompress
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -138,15 +139,45 @@ class SyncManager(
         return refused
     }
 
+    /** Google Drive photo store URL set on the web (Settings → Photo storage), or null = Supabase storage. */
+    private suspend fun photoStoreUrl(): String? = runCatching {
+        api.selectAnon("app_config?select=value&key=eq.photoStoreUrl").optJSONObject(0)?.optString("value")?.trim()
+    }.getOrNull()?.takeIf { it.startsWith("https://") }
+
+    /** Folder name for a photo in Drive: tapstand code / proposed label, or applicant name. */
+    private suspend fun photoLabel(entityType: String, entityId: String): String = when (entityType) {
+        "tapstand" -> db.tapstands().get(entityId)?.let { it.code ?: it.draftLabel ?: "Proposed" } ?: "Tapstand"
+        "applicant" -> db.applicants().get(entityId)?.let { listOf(it.lastName, it.firstName).joinToString(", ") } ?: "Applicant"
+        else -> entityType
+    }
+
     private suspend fun pushPhotos(projectId: String) {
         val stillLocal = (db.tapstands().newIds() + db.applicants().newIds()).toSet()
-        for (p in db.photos().pending()) {
-            if (p.entityId in stillLocal) continue           // record not on the server yet: upload it first
+        val pending = db.photos().pending().filter { it.entityId !in stillLocal }   // record not on the server yet: upload it first
+        if (pending.isEmpty()) return
+        val storeUrl = photoStoreUrl()
+        val tmp = File(layersDir.parentFile ?: layersDir, "photo_tmp").apply { mkdirs() }
+        for (p in pending) {
             val file = File(p.filePath)
             if (!file.exists()) { db.photos().markError(p.id, "File missing"); continue }
             try {
-                val path = "$projectId/${p.entityType}/${p.id}.jpg"
-                api.uploadFile("media", path, file)
+                // ~0.3 MB instead of 3–5 MB (plus a small thumbnail)
+                val small = runCatching { PhotoCompress.compress(file, tmp) }.getOrNull()
+                val path = if (storeUrl != null) {
+                    val full = small?.full ?: file.readBytes()
+                    val r = api.photoStore(storeUrl, JSONObject()
+                        .put("action", "upload").put("project", projectId).put("id", p.id)
+                        .put("entityType", p.entityType).put("label", photoLabel(p.entityType, p.entityId)).put("kind", p.kind)
+                        .put("takenAt", java.time.Instant.ofEpochMilli(p.takenAt).toString())
+                        .put("full", android.util.Base64.encodeToString(full, android.util.Base64.NO_WRAP))
+                        .put("thumb", small?.thumb?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) } ?: ""))
+                    "gdrive:" + r.getString("fullId") + (r.optString("thumbId").takeIf { it.isNotBlank() }?.let { "|$it" } ?: "")
+                } else {
+                    val path = "$projectId/${p.entityType}/${p.id}.jpg"
+                    val upload = small?.let { File(tmp, "${p.id}.jpg").apply { writeBytes(it.full) } } ?: file
+                    try { api.uploadFile("media", path, upload) } finally { if (upload != file) upload.delete() }
+                    path
+                }
                 api.insert("attachments", JSONObject()
                     .put("id", p.id).put("project_id", projectId)
                     .put("entity_type", p.entityType).put("entity_id", p.entityId)

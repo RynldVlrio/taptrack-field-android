@@ -177,6 +177,34 @@ class SupabaseClient(
         }
     }
 
+    // ── TapTrack Photo Store (Google Drive via Apps Script) ─────────────────
+
+    private val photoHttp by lazy {
+        http.newBuilder().readTimeout(90, TimeUnit.SECONDS).writeTimeout(90, TimeUnit.SECONDS).followRedirects(true).build()
+    }
+
+    /**
+     * POST a request to the Photo Store web app with the signed-in user's token.
+     * Google answers through a redirect (followed automatically). Returns the JSON reply; throws
+     * [ApiException] when the store refuses (e.g. not set up) and IOException when offline.
+     */
+    suspend fun photoStore(url: String, body: JSONObject): JSONObject {
+        ensureFreshToken()
+        val token = session.accessToken ?: throw AuthExpiredException()
+        return withContext(Dispatchers.IO) {
+            val req = Request.Builder().url(url)
+                .post(body.put("token", token).toString().toRequestBody("text/plain; charset=utf-8".toMediaType()))
+                .build()
+            photoHttp.newCall(req).execute().use { res ->
+                val text = res.body?.string().orEmpty()
+                val json = runCatching { JSONObject(text) }.getOrNull()
+                    ?: throw ApiException(res.code, "Photo store did not answer properly (check the web app URL / deployment)")
+                if (!json.optBoolean("ok")) throw ApiException(502, "Photo store: " + json.optString("error", "error"))
+                json
+            }
+        }
+    }
+
     /** Download a Storage object (private bucket) as bytes. */
     suspend fun downloadFile(bucket: String, path: String): ByteArray {
         ensureFreshToken()

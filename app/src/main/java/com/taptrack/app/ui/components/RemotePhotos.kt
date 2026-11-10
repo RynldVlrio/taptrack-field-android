@@ -56,10 +56,24 @@ fun RemotePhotos(
                     "attachments?select=id,kind,storage_path,taken_at&entity_type=eq.$entityType&entity_id=eq.$entityId" +
                         "&deleted_at=is.null&order=taken_at.desc"
                 )
+                var storeUrl: String? = null
                 (0 until arr.length()).map { arr.getJSONObject(it) }.mapNotNull { o ->
                     val id = o.getString("id")
                     val f = File(dir, "$id.jpg")
-                    if (!f.exists()) runCatching { f.writeBytes(container.api.downloadFile("media", o.getString("storage_path"))) }
+                    val path = o.getString("storage_path")
+                    if (!f.exists()) runCatching {
+                        if (path.startsWith("gdrive:")) {
+                            // kept in Google Drive through the TapTrack Photo Store (Settings → Photo storage on the web)
+                            val url = storeUrl ?: container.api.selectAnon("app_config?select=value&key=eq.photoStoreUrl")
+                                .optJSONObject(0)?.optString("value")?.trim().orEmpty().also { storeUrl = it }
+                            if (url.startsWith("https://")) {
+                                val r = container.api.photoStore(url, org.json.JSONObject()
+                                    .put("action", "get").put("project", container.session.projectId ?: "")
+                                    .put("fileId", path.removePrefix("gdrive:").substringBefore("|")))
+                                f.writeBytes(android.util.Base64.decode(r.getString("data"), android.util.Base64.DEFAULT))
+                            }
+                        } else f.writeBytes(container.api.downloadFile("media", path))
+                    }
                     if (f.exists()) RemotePhoto(id, o.optString("kind", "photo"), o.optString("taken_at").takeIf { it.isNotBlank() && it != "null" }, f) else null
                 }.sortedByDescending { it.kind == "installation" }
             } catch (e: Exception) {
