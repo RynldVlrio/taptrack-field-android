@@ -42,6 +42,21 @@ data class PipeDiameter(
 
 val STANDARD_PIPE_DIAMETERS = PipeDiameter.ALL
 
+data class SurveyedPipeline(
+    val file: File? = null,
+    val name: String,
+    val diameter: PipeDiameter,
+    val lengthMeters: Double,
+    val pointsCount: Int,
+    val points: List<GeoPoint>,
+    val surveyDate: String,
+    val lastModified: Long = file?.lastModified() ?: System.currentTimeMillis(),
+    val id: String = file?.name ?: "",
+    val storagePath: String = "",
+    val isCloud: Boolean = false,
+    val surveyorName: String? = null
+)
+
 object KmlExporter {
 
     /** Returned (as the Result value) when the file was already on the server — nothing was sent again. */
@@ -316,5 +331,182 @@ object KmlExporter {
         return dir.listFiles { f -> f.isFile && f.extension.equals("kml", ignoreCase = true) }
             ?.sortedByDescending { it.lastModified() }
             ?: emptyList()
+    }
+
+    /** Parses a saved KML file into a SurveyedPipeline model for map display */
+    fun parseKmlSurvey(file: File): SurveyedPipeline? = runCatching {
+        val content = file.readText()
+        val nameMatch = Regex("""<Placemark>\s*<name>([^<]+)</name>""").find(content)
+            ?: Regex("""<Document>\s*<name>([^<]+)</name>""").find(content)
+        val name = nameMatch?.groupValues?.get(1)?.trim() ?: file.nameWithoutExtension
+
+        val diameterInMatch = Regex("""<SimpleData name="diameter_in">(\d+)</SimpleData>""").find(content)
+        val diameterInches = diameterInMatch?.groupValues?.get(1)?.toIntOrNull() ?: 4
+        val diameterObj = STANDARD_PIPE_DIAMETERS.find { it.inches == diameterInches } ?: PipeDiameter.INCH_4
+
+        val lengthMatch = Regex("""<SimpleData name="length_m">([0-9.]+)</SimpleData>""").find(content)
+        val lengthMeters = lengthMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+
+        val dateMatch = Regex("""<SimpleData name="survey_date">([^<]+)</SimpleData>""").find(content)
+        val surveyDate = dateMatch?.groupValues?.get(1)?.trim()
+            ?: SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(file.lastModified()))
+
+        val coordMatch = Regex("""<coordinates>([^<]+)</coordinates>""").find(content)
+        val points = mutableListOf<GeoPoint>()
+        if (coordMatch != null) {
+            val tokens = coordMatch.groupValues[1].trim().split(Regex("""\s+"""))
+            for (token in tokens) {
+                val parts = token.split(",")
+                if (parts.size >= 2) {
+                    val lng = parts[0].toDoubleOrNull() ?: continue
+                    val lat = parts[1].toDoubleOrNull() ?: continue
+                    val alt = if (parts.size > 2) parts[2].toDoubleOrNull() ?: 0.0 else 0.0
+                    points.add(GeoPoint(lat, lng, alt))
+                }
+            }
+        }
+        val countMatch = Regex("""<SimpleData name="points_count">(\d+)</SimpleData>""").find(content)
+        val pointsCount = countMatch?.groupValues?.get(1)?.toIntOrNull() ?: points.size
+
+        SurveyedPipeline(
+            file = file,
+            name = name,
+            diameter = diameterObj,
+            lengthMeters = lengthMeters,
+            pointsCount = pointsCount,
+            points = points,
+            surveyDate = surveyDate,
+            lastModified = file.lastModified()
+        )
+    }.getOrNull()
+
+    /** Loads and parses all saved KML surveys from storage */
+    fun loadAllSurveyedPipelines(context: Context): List<SurveyedPipeline> {
+        val files = listSavedSurveys(context)
+        return files.mapNotNull { parseKmlSurvey(it) }
+    }
+
+    /** Deletes the surveyed KML file from app private storage and public Downloads */
+    fun deleteSurvey(context: Context, file: File): Boolean {
+        var deleted = file.delete()
+        runCatching {
+            val pubFile = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "TapTrack/AsBuilt/${file.name}"
+            )
+            if (pubFile.exists()) {
+                if (pubFile.delete()) deleted = true
+            }
+            val altPubFile = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "TapTrack_AsBuilt/${file.name}"
+            )
+            if (altPubFile.exists()) {
+                if (altPubFile.delete()) deleted = true
+            }
+        }
+        return deleted
+    }
+
+    /** Deletes all locally saved survey KML files from this phone */
+    fun deleteAllLocalSurveys(context: Context): Int {
+        val files = listSavedSurveys(context)
+        var count = 0
+        for (f in files) {
+            if (deleteSurvey(context, f)) count++
+        }
+        return count
+    }
+
+    /**
+     * Fetches surveyed pipelines from the Supabase public.as_built_pipelines database table.
+     * Caches downloaded records locally so they can be viewed offline when surveying in the field.
+     */
+    suspend fun fetchSupabaseSurveys(container: AppContainer, context: Context): List<SurveyedPipeline> {
+        val projectId = container.session.projectId
+        val cacheFile = File(context.filesDir, "as_built_supabase_cache.json")
+
+        if (!projectId.isNullOrBlank()) {
+            try {
+                val arr = container.api.select("as_built_pipelines?project_id=eq.$projectId&order=id.desc&limit=1000")
+                runCatching { cacheFile.writeText(arr.toString()) }
+                return parseSupabaseArray(arr, context)
+            } catch (e: Exception) {
+                // Network error / offline: fallback to cache
+            }
+        }
+
+        if (cacheFile.exists()) {
+            val cachedArr = runCatching { JSONArray(cacheFile.readText()) }.getOrNull()
+            if (cachedArr != null) {
+                return parseSupabaseArray(cachedArr, context)
+            }
+        }
+        return emptyList()
+    }
+
+    private fun parseSupabaseArray(arr: JSONArray, context: Context): List<SurveyedPipeline> {
+        val list = mutableListOf<SurveyedPipeline>()
+        val privDir = File(context.filesDir, "as_built_kml")
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val id = obj.optString("id")
+            val name = obj.optString("name").ifBlank { "Surveyed Pipeline" }
+            val inches = obj.optInt("diameter_inches", 4)
+            val mm = obj.optInt("diameter_mm", 110)
+            val colorHex = obj.optString("color")
+            val diameter = STANDARD_PIPE_DIAMETERS.find { it.inches == inches }
+                ?: STANDARD_PIPE_DIAMETERS.find { it.mm == mm }
+                ?: STANDARD_PIPE_DIAMETERS.find { it.hexColor.equals(colorHex, ignoreCase = true) }
+                ?: PipeDiameter.INCH_4
+            val lengthM = obj.optDouble("length_meters", 0.0)
+            val count = obj.optInt("points_count", 0)
+            val surveyDate = obj.optString("survey_date", "")
+            val surveyor = if (obj.isNull("surveyor_name") || obj.optString("surveyor_name").isBlank()) null else obj.optString("surveyor_name")
+            val storagePath = obj.optString("storage_path", "")
+
+            // Parse coordinates JSON array
+            val coordsArray = when (val c = obj.opt("coordinates")) {
+                is JSONArray -> c
+                is String -> runCatching { JSONArray(c) }.getOrNull()
+                else -> null
+            }
+            val points = mutableListOf<GeoPoint>()
+            if (coordsArray != null) {
+                for (j in 0 until coordsArray.length()) {
+                    val ptObj = coordsArray.optJSONObject(j) ?: continue
+                    val lat = ptObj.optDouble("lat", Double.NaN)
+                    val lng = ptObj.optDouble("lng", Double.NaN)
+                    val alt = ptObj.optDouble("alt", 0.0)
+                    if (!lat.isNaN() && !lng.isNaN()) {
+                        points.add(GeoPoint(lat, lng, alt))
+                    }
+                }
+            }
+
+            // Check if matching local file exists
+            val localFileName = storagePath.substringAfterLast("/", "")
+            val localFile = if (localFileName.isNotBlank()) {
+                val f = File(privDir, localFileName)
+                if (f.exists()) f else null
+            } else null
+
+            list.add(
+                SurveyedPipeline(
+                    file = localFile,
+                    name = name,
+                    diameter = diameter,
+                    lengthMeters = lengthM,
+                    pointsCount = if (count > 0) count else points.size,
+                    points = points,
+                    surveyDate = surveyDate,
+                    id = id,
+                    storagePath = storagePath,
+                    isCloud = true,
+                    surveyorName = surveyor
+                )
+            )
+        }
+        return list
     }
 }

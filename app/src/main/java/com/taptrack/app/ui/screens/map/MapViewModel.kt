@@ -50,26 +50,31 @@ class MapViewModel(private val c: AppContainer) : ViewModel() {
     private val _overlays = MutableStateFlow<List<BoundaryOverlay>>(emptyList())
     val overlays: StateFlow<List<BoundaryOverlay>> = _overlays.asStateFlow()
 
+    private val _allOverlays = MutableStateFlow<Map<String, BoundaryOverlay>>(emptyMap())
+    val allOverlays: StateFlow<Map<String, BoundaryOverlay>> = _allOverlays.asStateFlow()
+
     private val parsed = mutableMapOf<String, ParsedBoundary>()   // key = id|localVersion
 
     init {
         viewModelScope.launch {
             layers.collect { list ->
-                val shown = list.filter { it.visible && it.localFile != null }
+                val withFile = list.filter { it.localFile != null }
                 withContext(Dispatchers.IO) {
-                    for (l in shown) {
+                    for (l in withFile) {
                         val key = "${l.id}|${l.localVersion}"
                         if (key !in parsed) runCatching { GeoJsonLayer.read(File(l.localFile!!), l.name) }.onSuccess { parsed[key] = it }
                     }
                 }
-                _overlays.value = shown.mapNotNull { l ->
+                val overlayMap = withFile.mapNotNull { l ->
                     val p = parsed["${l.id}|${l.localVersion}"] ?: return@mapNotNull null
-                    BoundaryOverlay(
+                    l.id to BoundaryOverlay(
                         id = l.id.hashCode().toLong(), name = l.name,
                         fillColor = l.fillColor, borderColor = l.strokeColor, showLabel = l.showLabel,
                         polygons = p.polygons, polylines = p.polylines, points = p.points, weight = l.weight, legend = p.legend, legendTitle = p.legendTitle,
                     )
-                }
+                }.toMap()
+                _allOverlays.value = overlayMap
+                _overlays.value = list.filter { it.visible && it.localFile != null }.mapNotNull { overlayMap[it.id] }
             }
         }
     }
